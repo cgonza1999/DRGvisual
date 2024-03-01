@@ -1,5 +1,9 @@
 import tkinter as tk
 from tkinter import font as tkfont  # Import tkfont for custom font
+
+import cv2
+import numpy as np
+
 import cv_functions as cvf
 import display_functions as df
 
@@ -24,10 +28,10 @@ class ImageLabelerApp:
         self.current_image_index = None  # Tracks the current image
 
         # Add dimensions for default image window
-        self.rect_start_x = int(0.01 * self.root.winfo_screenwidth())
-        self.rect_start_y = int(0.01 * self.root.winfo_screenheight())
-        self.rect_end_x = int(0.76 * self.root.winfo_screenwidth())
-        self.rect_end_y = int(0.76 * self.root.winfo_screenheight())
+        self.rect_start_x = int(0.125 * self.root.winfo_screenwidth())
+        self.rect_start_y = int(0.125 * self.root.winfo_screenheight())
+        self.rect_end_x = int(0.875 * self.root.winfo_screenwidth())
+        self.rect_end_y = int(0.875 * self.root.winfo_screenheight())
         self.rect_width = self.rect_end_x - self.rect_start_x
         self.rect_height = self.rect_end_y - self.rect_start_y
         self.rect_center_x = int(self.rect_start_x + self.rect_width / 2)
@@ -52,12 +56,12 @@ class ImageLabelerApp:
         # Initialize variables
         self.pan_start_x = None
         self.pan_start_y = None
-        self.image_x = self.rect_center_x
-        self.image_y = self.rect_center_y
+        self.image_offset_x = 0
+        self.image_offset_y = 0
         self.zoom_level = 1.0
 
         # Call UI setup
-        self.setup_ui()
+        self.root.after(100, self.setup_ui())
 
     def on_mouse_press(self, event):
         # Start panning
@@ -69,18 +73,28 @@ class ImageLabelerApp:
         if self.pan_start_x is not None and self.pan_start_y is not None:
             delta_x = event.x - self.pan_start_x
             delta_y = event.y - self.pan_start_y
-            self.image_x += delta_x
-            self.image_y += delta_y
+            self.image_offset_x += delta_x*self.zoom_level
+            self.image_offset_y += delta_y*self.zoom_level
             self.pan_start_x = event.x
             self.pan_start_y = event.y
             df.display_current_image(self)
 
     def on_mouse_wheel_scroll(self, event):
         # Zoom in or out based on mouse wheel scroll
+        image = self.cv2_images[self.current_image_index]
+
+        zoomed_image = np.ndarray(shape=(1, 1))
+
         if event.delta > 0:
-            self.zoom_level *= 1.1  # Increase zoom level
+            self.zoom_level * 1.1
+            zoomed_image = cv2.resize(image, (int(image.shape[0] * 1.1), int(image.shape[1] * 1.1)),
+                                      interpolation=cv2.INTER_CUBIC)
         else:
-            self.zoom_level /= 1.1  # Decrease zoom level
+            self.zoom_level / 1.1
+            zoomed_image = cv2.resize(image, (int(image.shape[0] / 1.1), int(image.shape[1] / 1.1)),
+                                      interpolation=cv2.INTER_CUBIC)
+
+        self.cv2_images[self.current_image_index] = zoomed_image
         df.display_current_image(self)
 
     def setup_ui(self):

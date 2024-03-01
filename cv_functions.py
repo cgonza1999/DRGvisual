@@ -20,10 +20,15 @@ def isolate_channel(self, channel):
         g_rgb = cv2.merge([np.zeros_like(b), g, np.zeros_like(r)])
         b_rgb = cv2.merge([b, np.zeros_like(g), np.zeros_like(r)])
 
+        r_rgb = cv2.cvtColor(r_rgb, cv2.COLOR_BGR2RGB)
+        g_rgb = cv2.cvtColor(g_rgb, cv2.COLOR_BGR2RGB)
+        b_rgb = cv2.cvtColor(b_rgb, cv2.COLOR_BGR2RGB)
+
         # Convert the RGB images to PhotoImage for displaying with Tkinter
         r_photo = df.convert_to_photoimage(self, r_rgb)
         g_photo = df.convert_to_photoimage(self, g_rgb)
         b_photo = df.convert_to_photoimage(self, b_rgb)
+
 
         match channel:
             case "r":
@@ -64,7 +69,8 @@ def resize_image(self, image):
         new_height = window_width / aspect_ratio
 
     # Perform resizing
-    resized_image = cv2.resize(image, (int(new_width*self.zoom_level), int(new_height*self.zoom_level)), interpolation=cv2.INTER_CUBIC)
+    resized_image = cv2.resize(image, (int(new_width), int(new_height)),
+                               interpolation=cv2.INTER_CUBIC)
     return resized_image
 
 
@@ -80,6 +86,8 @@ def select_and_load_files(self):
 def load_and_resize_images(self):
     self.photoimages.clear()  # Clear existing images before loading new ones
     self.cv2_images.clear()  # Clear existing images before loading new ones
+    self.image_offset_x = 0
+    self.image_offset_y = 0
 
     for file_path in self.image_file_paths:
         # Load the image using OpenCV

@@ -58,68 +58,73 @@ def rgb_split(self):
 
 def convert_to_photoimage(self, image):
     # Convert the image to PIL Image
-    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    pil_image = Image.fromarray(image)
     # Convert the PIL Image to PhotoImage for displaying with Tkinter
     return ImageTk.PhotoImage(pil_image)
 
 
-def create_transparency_mask(window_size, rectangle_coords):
-    width, height = window_size
-    mask = np.full((height, width), 0, dtype=np.uint8)  # Initialize mask with fully opaque pixels
-    x1, y1 = rectangle_coords[0]
-    x2, y2 = rectangle_coords[1]
-    mask[y1:y2, x1:x2] = 255  # Set pixels inside the rectangle to fully transparent
-    return mask
+def position_image_in_canvas(self, image):
+    # Get the dimensions of the resized image
+    image_height, image_width, _ = image.shape
 
+    # Create a canvas-sized image with the same dimensions as the canvas
+    canvas_height = 10 * self.canvas.winfo_height()
+    canvas_width = 10 * self.canvas.winfo_width()
+    canvas_image = np.zeros((canvas_height, canvas_width, 3), dtype=np.uint8)
 
-# Function to apply transparency mask to the image
-def apply_transparency(image, mask):
-    # Resize the mask to match the dimensions of the image
-    resized_mask = cv2.resize(mask, (image.shape[1], image.shape[0]))
+    # Calculate the position to place the resized image within the canvas-sized image
+    start_x = int(canvas_width / 2 - image_width / 2 + self.image_offset_x)
+    start_y = int(canvas_height / 2 - image_height / 2 + self.image_offset_y)
 
-    # Stack the image and the resized mask along the third axis to create an RGBA image
-    image_with_alpha = np.dstack((image, resized_mask))
+    # Calculate the region where the resized image will be placed within the canvas-sized image
+    end_x = start_x + image_width
+    end_y = start_y + image_height
 
-    # Convert the RGBA image to PIL Image
-    image_with_alpha_pil = Image.fromarray(image_with_alpha)
+    # Place the resized image within the canvas-sized image
+    canvas_image[start_y:end_y, start_x:end_x] = image
 
-    return image_with_alpha_pil
+    return canvas_image
 
 
 # Function to update the transparency mask and display the current image
 def display_current_image(self):
-    if not self.photoimages:
+    if not self.cv2_images:
         return  # No images to display
 
     self.canvas.delete("image")  # Clear previous image
 
     # Get the current image
     image = self.cv2_images[self.current_image_index]
-    resized_image = cvf.resize_image(self, image)
+    canvas_image = position_image_in_canvas(self, image)
 
-    # Calculate the coordinates for placing the image centered within the black rectangle
-    image_x = self.image_x - resized_image.shape[1] / 2
-    image_y = self.image_y - resized_image.shape[0] / 2
+    # Crop the canvas image
+    crop_x_start = int(9 / 20 * canvas_image.shape[0])
+    crop_x_end = int(11 / 20 * canvas_image.shape[0])
+    crop_y_start = int(9 / 20 * canvas_image.shape[1])
+    crop_y_end = int(11 / 20 * canvas_image.shape[1])
+    cropped_canvas_image = canvas_image[crop_x_start:crop_x_end, crop_y_start:crop_y_end]
 
-    # Calculate the coordinates of the black rectangle relative to the window
-    rectangle_coords = ((self.rect_start_x, self.rect_start_y), (self.rect_end_x, self.rect_end_y))
+    # Create a mask for pixels outside the bounding box
+    mask = np.zeros((self.canvas.winfo_height(), self.canvas.winfo_width()), dtype=np.uint8)
+    mask[self.rect_start_y:self.rect_end_y, self.rect_start_x:self.rect_end_x] = 255
 
-    # Get the size of the window
-    window_size = (self.canvas.winfo_width(), self.canvas.winfo_height())
-
-    # Create transparency mask
-    transparency_mask = create_transparency_mask(window_size, rectangle_coords)
-
-    # Apply transparency mask to the image
-    image_with_transparency = apply_transparency(resized_image, transparency_mask)
+    # Create an alpha channel with max opacity inside the bounding box
+    alpha_map = np.where(mask == 255, 255, 0).astype(np.uint8)  # Ensure the correct data type
 
     # Convert the image to PhotoImage for displaying with Tkinter
-    photo_image = ImageTk.PhotoImage(image=image_with_transparency)
+    pil_image = Image.fromarray(cropped_canvas_image)
+
+    # Apply the alpha channel to the image
+    if pil_image.mode != 'RGBA':
+        pil_image = pil_image.convert('RGBA')  # Convert to RGBA mode if not already
+    pil_image.putalpha(Image.fromarray(alpha_map))
+
+    photo_image = ImageTk.PhotoImage(pil_image)
 
     self.photoimages[self.current_image_index] = photo_image
 
     # Display the image on the canvas
-    self.canvas.create_image(image_x, image_y, anchor="nw", image=photo_image, tags="image")
+    self.canvas.create_image(0, 0, anchor="nw", image=photo_image, tags="image")
 
 
 def update_image_label_display(self):
@@ -159,6 +164,8 @@ def prompt_for_labels(self):
 def next_image(self):
     if self.photoimages:
         self.current_image_index = (self.current_image_index + 1) % len(self.photoimages)
+        self.image_offset_x = 0
+        self.image_offset_y = 0
         display_current_image(self)
         update_image_label_display(self)  # Update the label display
 
@@ -166,15 +173,7 @@ def next_image(self):
 def prev_image(self):
     if self.photoimages:
         self.current_image_index = (self.current_image_index - 1) % len(self.photoimages)
+        self.image_offset_x = 0
+        self.image_offset_y = 0
         display_current_image(self)
         update_image_label_display(self)  # Update the label display
-
-
-def photoimage_to_image(self, current_image):
-    """
-    Convert a PhotoImage object to a PIL Image object.
-    """
-    # Convert PhotoImage to PIL Image
-    pil_image = Image.frombytes('RGB', (current_image.width(), current_image.height()), current_image.data)
-
-    return pil_image
