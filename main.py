@@ -22,16 +22,19 @@ class ImageLabelerApp:
         self.photoimages = []  # Array to store PhotoImage objects for display
         self.image_file_paths = []  # Stores the file paths of the images
         self.image_labels = []  # Stores the labels for the images
+        self.DRG_line_coords = []
+        self.DRG_radii = []
+        self.DRG_segments = []
 
         # Construct default indices and display values
         self.image_label_display = None  # Store the label widget for reference
         self.current_image_index = None  # Tracks the current image
 
         # Add dimensions for default image window
-        self.rect_start_x = int(0.125 * self.root.winfo_screenwidth())
-        self.rect_start_y = int(0.125 * self.root.winfo_screenheight())
-        self.rect_end_x = int(0.875 * self.root.winfo_screenwidth())
-        self.rect_end_y = int(0.875 * self.root.winfo_screenheight())
+        self.rect_start_x = int(0.1 * self.root.winfo_screenwidth())
+        self.rect_start_y = int(0.1 * self.root.winfo_screenheight())
+        self.rect_end_x = int(0.9 * self.root.winfo_screenwidth())
+        self.rect_end_y = int(0.9 * self.root.winfo_screenheight())
         self.rect_width = self.rect_end_x - self.rect_start_x
         self.rect_height = self.rect_end_y - self.rect_start_y
         self.rect_center_x = int(self.rect_start_x + self.rect_width / 2)
@@ -47,6 +50,7 @@ class ImageLabelerApp:
         self.green_channel_button = tk.Button(self.root, text="G", command=lambda: cvf.isolate_channel(self, "g"))
         self.blue_channel_button = tk.Button(self.root, text="B", command=lambda: cvf.isolate_channel(self, "b"))
         self.rgb_restore_button = tk.Button(self.root, text="Restore", command=lambda: cvf.rgb_restore(self))
+        self.drg_segment_button = tk.Button(self.root, text="DRG Segmentation", command=lambda: cvf.drg_segment(self))
 
         # Track mouse events
         self.canvas.bind("<ButtonPress-1>", self.on_mouse_press)
@@ -59,6 +63,10 @@ class ImageLabelerApp:
         self.image_offset_x = 0
         self.image_offset_y = 0
         self.zoom_level = 1.0
+        self.draw_start_x = None
+        self.draw_start_y = None
+        self.draw_end_x = None
+        self.draw_end_y = None
 
         # Call UI setup
         self.root.after(100, self.setup_ui())
@@ -73,8 +81,8 @@ class ImageLabelerApp:
         if self.pan_start_x is not None and self.pan_start_y is not None:
             delta_x = event.x - self.pan_start_x
             delta_y = event.y - self.pan_start_y
-            self.image_offset_x += delta_x*self.zoom_level
-            self.image_offset_y += delta_y*self.zoom_level
+            self.image_offset_x += delta_x * self.zoom_level
+            self.image_offset_y += delta_y * self.zoom_level
             self.pan_start_x = event.x
             self.pan_start_y = event.y
             df.display_current_image(self)
@@ -142,6 +150,7 @@ class ImageLabelerApp:
         self.blue_channel_button.place(x=select_button_x + 2 * select_button_width / 3, y=select_button_y + 7 * gap,
                                        width=select_button_width / 3)
         self.rgb_restore_button.place(x=select_button_x, y=select_button_y + 10.5 * gap, width=select_button_width)
+        self.drg_segment_button.place(x=select_button_x, y=select_button_y + 14 * gap, width=select_button_width)
 
 
 if __name__ == "__main__":

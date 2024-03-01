@@ -1,5 +1,6 @@
 import cv2
 import display_functions as df
+import tkinter as tk
 from tkinter import filedialog
 import numpy as np
 
@@ -29,7 +30,6 @@ def isolate_channel(self, channel):
         g_photo = df.convert_to_photoimage(self, g_rgb)
         b_photo = df.convert_to_photoimage(self, b_rgb)
 
-
         match channel:
             case "r":
                 # Update cv2_images with the isolated green channel
@@ -47,6 +47,68 @@ def isolate_channel(self, channel):
                 self.photoimages[idx] = b_photo
 
     df.display_current_image(self)
+
+
+def drg_segment(self):
+    # Function to start drawing a line
+    def start_line(event):
+        self.DRG_line_coords.append((event.x, event.y))
+        canvas.bind("<Motion>", draw_line)
+
+    # Function to draw a line
+    def draw_line(event):
+        canvas.delete("temp_line")
+        canvas.create_line(self.DRG_line_coords[-1][0], self.DRG_line_coords[-1][1], event.x, event.y, fill="white",
+                           width=3, tags="temp_line")
+
+    # Function to end drawing a line
+    def end_line(event):
+        self.DRG_line_coords.append((event.x, event.y))
+        canvas.create_line(self.DRG_line_coords[-2][0], self.DRG_line_coords[-2][1], self.DRG_line_coords[-1][0],
+                           self.DRG_line_coords[-1][1], fill="white",   width=3, tags="line")
+        canvas.unbind("<Motion>")
+
+    def finish_drawing():
+        # Placeholder for saving the drawn lines or performing any other action
+        tk.messagebox.showinfo("Finish Drawing", "Drawing finished!")
+
+    # Load the current image
+    current_image = cv2.imread(self.image_file_paths[self.current_image_index])
+    current_image = resize_image(self, current_image)
+
+    # Split the image into its RGB channels
+    b, g, r = cv2.split(current_image)
+
+    # Create separate RGB images for each channel
+    g_rgb = cv2.merge([np.zeros_like(b), g, np.zeros_like(r)])
+    g_rgb = cv2.cvtColor(g_rgb, cv2.COLOR_BGR2RGB)
+
+    # Convert the image to PhotoImage for displaying with Tkinter
+    g_photo = df.convert_to_photoimage(self, g_rgb)
+
+    # Display instruction message box
+    tk.messagebox.showinfo("Instructions", "Please draw lines across cell radii.")
+
+    # Create a new window for DRG Segmentation
+    drg_segment_window = tk.Toplevel(self.root)
+    drg_segment_window.title("DRG Segmentation")
+
+
+
+    # Display the image in the new window
+    canvas = tk.Canvas(drg_segment_window, bg='white', width=g_photo.width(), height=g_photo.height())
+    canvas.create_image(0, 0, anchor="nw", image=g_photo)
+    canvas.pack()
+
+    # Bind events for line drawing
+    canvas.bind("<Button-1>", start_line)
+    canvas.bind("<ButtonRelease-1>", end_line)
+
+    # Create finish button
+    finish_button = tk.Button(drg_segment_window, text="Finish", command=finish_drawing)
+    finish_button.pack()
+    # Run the Tkinter event loop
+    drg_segment_window.mainloop()
 
 
 def resize_image(self, image):
