@@ -1,2 +1,0 @@
-# Binder-specific requirements
-opencv-python-headless
