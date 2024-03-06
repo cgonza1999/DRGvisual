@@ -2,6 +2,7 @@ import cv2
 import display_functions as df
 import tkinter as tk
 from tkinter import filedialog
+from tkinter import messagebox
 import numpy as np
 
 
@@ -65,12 +66,12 @@ def drg_segment(self):
     def end_line(event):
         self.DRG_line_coords.append((event.x, event.y))
         canvas.create_line(self.DRG_line_coords[-2][0], self.DRG_line_coords[-2][1], self.DRG_line_coords[-1][0],
-                           self.DRG_line_coords[-1][1], fill="white",   width=3, tags="line")
+                           self.DRG_line_coords[-1][1], fill="white", width=3, tags="line")
         canvas.unbind("<Motion>")
 
     def finish_drawing():
         # Placeholder for saving the drawn lines or performing any other action
-        tk.messagebox.showinfo("Finish Drawing", "Drawing finished!")
+        messagebox.showinfo("Finish Drawing", "Drawing finished!")
 
     # Load the current image
     current_image = cv2.imread(self.image_file_paths[self.current_image_index])
@@ -87,13 +88,11 @@ def drg_segment(self):
     g_photo = df.convert_to_photoimage(self, g_rgb)
 
     # Display instruction message box
-    tk.messagebox.showinfo("Instructions", "Please draw lines across cell radii.")
+    messagebox.showinfo("Instructions", "Please draw lines across cell radii.")
 
     # Create a new window for DRG Segmentation
     drg_segment_window = tk.Toplevel(self.root)
     drg_segment_window.title("DRG Segmentation")
-
-
 
     # Display the image in the new window
     canvas = tk.Canvas(drg_segment_window, bg='white', width=g_photo.width(), height=g_photo.height())
