@@ -22,10 +22,22 @@ def rgb_split(self):
     g_rgb = cv2.merge([np.zeros_like(b), g, np.zeros_like(r)])
     b_rgb = cv2.merge([b, np.zeros_like(g), np.zeros_like(r)])
 
-    # Resize images to fit the available space while maintaining aspect ratio
-    r_rgb_resized = cvf.resize_image(self, r_rgb)
-    g_rgb_resized = cvf.resize_image(self, g_rgb)
-    b_rgb_resized = cvf.resize_image(self, b_rgb)
+    # Get image dimensions
+    height, width, _ = r_rgb.shape
+
+    # Get the window dimensions
+    window_width = self.canvas.winfo_width()
+
+    new_width = window_width / 3
+    height_scale = new_width / width
+    new_height = height * height_scale
+
+    r_rgb_resized = cv2.resize(r_rgb, (int(new_width), int(new_height)),
+                               interpolation=cv2.INTER_CUBIC)
+    g_rgb_resized = cv2.resize(g_rgb, (int(new_width), int(new_height)),
+                               interpolation=cv2.INTER_CUBIC)
+    b_rgb_resized = cv2.resize(b_rgb, (int(new_width), int(new_height)),
+                               interpolation=cv2.INTER_CUBIC)
 
     # Convert the RGB images to PhotoImage for displaying with Tkinter
     r_photo = convert_to_photoimage(self, r_rgb_resized)
@@ -49,7 +61,7 @@ def rgb_split(self):
     b_label = tk.Label(rgb_window, image=b_photo)
     b_label.grid(row=0, column=2, sticky="nsew")  # Expand in all directions
 
-    # Update window geometry to maximize it
+    # Update window geometry to normalize it
     rgb_window.state('normal')
 
     # Run the Tkinter event loop

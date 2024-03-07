@@ -1,9 +1,8 @@
 import tkinter as tk
-from tkinter import font as tkfont  # Import tkfont for custom font
-
+from tkinter import font as tkfont
+from tkinter import ttk
 import cv2
 import numpy as np
-
 import cv_functions as cvf
 import display_functions as df
 
@@ -16,15 +15,18 @@ class ImageLabelerApp:
         self.root.state('zoomed')  # Maximize the main application window
         self.canvas = tk.Canvas(self.root, bg='gray')  # Create a canvas with a gray background
         self.canvas.pack(fill='both', expand=True)  # Make the canvas fill the window
+        self.root.update_idletasks()  # Ensure window and frame sizes are up-to-date
 
         # Construct Image Arrays
         self.cv2_images = []  # Array to store raw cv2 image data
         self.photoimages = []  # Array to store PhotoImage objects for display
+        self.gray_images = []
+        self.contrasted_gray_images = []
         self.image_file_paths = []  # Stores the file paths of the images
         self.image_labels = []  # Stores the labels for the images
         self.DRG_line_coords = []
-        self.DRG_radii = []
-        self.DRG_segments = []
+        self.DRG_diameter = []
+        self.DRG_line_ids = []
 
         # Construct default indices and display values
         self.image_label_display = None  # Store the label widget for reference
@@ -32,9 +34,9 @@ class ImageLabelerApp:
 
         # Add dimensions for default image window
         self.rect_start_x = int(0.1 * self.root.winfo_screenwidth())
-        self.rect_start_y = int(0.1 * self.root.winfo_screenheight())
+        self.rect_start_y = int(0.1 * self.root.winfo_screenheight()) - self.root.winfo_rooty()
         self.rect_end_x = int(0.9 * self.root.winfo_screenwidth())
-        self.rect_end_y = int(0.9 * self.root.winfo_screenheight())
+        self.rect_end_y = int(0.9 * self.root.winfo_screenheight()) - self.root.winfo_rooty()
         self.rect_width = self.rect_end_x - self.rect_start_x
         self.rect_height = self.rect_end_y - self.rect_start_y
         self.rect_center_x = int(self.rect_start_x + self.rect_width / 2)
@@ -46,10 +48,17 @@ class ImageLabelerApp:
         self.select_button = tk.Button(self.root, text="Select Image Files",
                                        command=lambda: cvf.select_and_load_files(self))
         self.rgb_split_button = tk.Button(self.root, text="RGB Preview", command=lambda: df.rgb_split(self))
-        self.red_channel_button = tk.Button(self.root, text="R", command=lambda: cvf.isolate_channel(self, "r"))
-        self.green_channel_button = tk.Button(self.root, text="G", command=lambda: cvf.isolate_channel(self, "g"))
-        self.blue_channel_button = tk.Button(self.root, text="B", command=lambda: cvf.isolate_channel(self, "b"))
-        self.rgb_restore_button = tk.Button(self.root, text="Restore", command=lambda: cvf.rgb_restore(self))
+
+        # Dropdown menu for color channel selection
+        self.channel_var = tk.StringVar()  # Variable to store the selected color channel
+        self.color_channel_combobox = ttk.Combobox(self.root, textvariable=self.channel_var, state="readonly")
+        self.color_channel_combobox['values'] = ('Red', 'Green', 'Blue')  # Options for color channels
+        self.color_channel_combobox.current(1)  # Set default selection to 'Red'
+
+        channel_font = tkfont.Font(family="Segoe UI", size=9, weight="bold")
+        self.channel_label = tk.Label(self.root, font=channel_font, bg='gray')
+        self.channel_label.config(text="DRG Channel")
+
         self.drg_segment_button = tk.Button(self.root, text="DRG Segmentation", command=lambda: cvf.drg_segment(self))
 
         # Track mouse events
@@ -111,14 +120,11 @@ class ImageLabelerApp:
                                      self.rect_end_x, self.rect_end_y,
                                      fill="black", outline="black")
 
-        # Calculate center of default image window for label position
-        rect_center_x = self.rect_start_x + (self.rect_end_x - self.rect_start_x) / 2
-
         # Create a label widget for displaying image label
-        label_font = tkfont.Font(family="Arial", size=14, weight="bold")
-        self.image_label_display = tk.Label(self.root, font=label_font, bg='gray')
+        label_font = tkfont.Font(family="Segoe UI", size=14, weight="bold")
+        self.image_label_display = tk.Label(self.root, font=label_font, bg='white')
         self.image_label_display.config(text="")
-        self.image_label_display.place(x=rect_center_x, y=self.rect_end_y + 20, anchor="n")  # Adjust y as needed
+        self.image_label_display.place(x=self.rect_center_x, y=self.rect_end_y + 20, anchor="n")  # Adjust y as needed
 
         # Define element dimensions
         button_width = 80  # Approximate width for buttons
@@ -136,21 +142,18 @@ class ImageLabelerApp:
         next_button_x = prev_button_x + button_width + gap  # To the right of the previous button with a gap
         self.next_button.place(x=next_button_x, y=self.rect_end_y + gap, width=button_width)
 
-        select_button_width = 150  # Adjust based on the expected button width
-        select_button_x = whitespace_midpoint - (select_button_width / 2)
+        button_width = 150  # Adjust based on the expected button width
+        button_height = 25
+        select_button_x = whitespace_midpoint - (button_width / 2)
         select_button_y = self.rect_start_y
-        self.select_button.place(x=select_button_x, y=select_button_y, width=select_button_width)
+        self.select_button.place(x=select_button_x, y=select_button_y, width=button_width, height=button_height)
 
-        self.rgb_split_button.place(x=select_button_x, y=select_button_y + 3.5 * gap, width=select_button_width)
+        self.rgb_split_button.place(x=select_button_x, y=select_button_y + 3.5 * gap, width=button_width, height=button_height)
 
-        self.red_channel_button.place(x=select_button_x, y=select_button_y + 7 * gap,
-                                      width=select_button_width / 3)
-        self.green_channel_button.place(x=select_button_x + select_button_width / 3, y=select_button_y + 7 * gap,
-                                        width=select_button_width / 3)
-        self.blue_channel_button.place(x=select_button_x + 2 * select_button_width / 3, y=select_button_y + 7 * gap,
-                                       width=select_button_width / 3)
-        self.rgb_restore_button.place(x=select_button_x, y=select_button_y + 10.5 * gap, width=select_button_width)
-        self.drg_segment_button.place(x=select_button_x, y=select_button_y + 14 * gap, width=select_button_width)
+        self.color_channel_combobox.place(x=select_button_x, y=select_button_y + 14 * gap, width=button_width, height=button_height)
+        self.drg_segment_button.place(x=select_button_x, y=select_button_y + 17.5 * gap, width=button_width, height=button_height)
+
+        self.channel_label.place(x=select_button_x + button_width/2, y=select_button_y + 10.5 * gap + button_height/2, anchor="n")
 
 
 if __name__ == "__main__":
