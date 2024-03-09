@@ -22,9 +22,13 @@ class ImageLabelerApp:
         self.photoimages = []  # Array to store PhotoImage objects for display
         self.gray_images = []
         self.contrasted_gray_images = []
+        self.edge_maps = []
+        self.edge_thresholds = []
+        self.seeds = []
+        self.process_statuses = []
+        self.regions = []
         self.image_file_paths = []  # Stores the file paths of the images
         self.image_labels = []  # Stores the labels for the images
-        self.DRG_line_coords = []
         self.DRG_diameter = []
         self.DRG_line_ids = []
 
