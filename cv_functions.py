@@ -4,13 +4,14 @@ import tkinter as tk
 from tkinter import filedialog
 from tkinter import messagebox
 import numpy as np
+from skimage.draw import polygon
 from skimage import morphology
 from skimage.measure import regionprops
 
 
 def drg_segment(self):
     self.drg_segment_photo = None
-    self.DRG_diameter.clear()
+    self.drg_segment_image = None
 
     def apply_contrast():
         clahe = cv2.createCLAHE(clipLimit=4, tileGridSize=(8, 8))
@@ -23,76 +24,70 @@ def drg_segment(self):
 
         self.drg_segment_photo = contrasted_photo
 
-    def overlay_regions_as_white():
-        """
-        Modifies the original grayscale image to replace all pixels that are part of a region with white pixels.
+    def radial_projection_with_adjustment(edge_map, seed, angle_step=1, length_difference_threshold=5):
+        projections = []
+        angles = np.arange(0, 360, angle_step)
 
-        Parameters:
-        - original_image: Grayscale image as a NumPy array.
-        - regions: NumPy array of the same shape as original_image, with distinct regions labeled with unique integers.
-                   Non-region areas should be labeled with 0.
+        max_length = int(1.2 * np.max(self.DRG_diameter[self.current_image_index]) / 2)
+        # Calculate projections
+        for angle in angles:
+            for length in range(1, max_length + 1):
+                dx = int(length * np.cos(np.radians(angle)))
+                dy = int(length * np.sin(np.radians(angle)))
+                x, y = seed[0] + dx, seed[1] + dy
+                if not (0 <= x < edge_map.shape[1] and 0 <= y < edge_map.shape[0]) or edge_map[y, x] == 255:
+                    break
+            projections.append(length)
 
-        Returns:
-        - A modified image where pixels in regions are white.
-        """
+        # Adjust projections
+        adjusted_projections = []
 
-        # Create a copy of the original image to avoid modifying it directly
-        overlay_image = self.gray_images[self.current_image_index]
+        for i, length in enumerate(projections):
+            if i > 0 and abs(projections[i] - projections[i - 1]) > length_difference_threshold:
+                length = min(projections[i], projections[i - 1])
+            if i < len(projections) - 1 and abs(projections[i] - projections[i + 1]) > length_difference_threshold:
+                length = min(projections[i], projections[i + 1])
+            adjusted_projections.append(length)
 
-        # Identify all pixels that are part of any region (i.e., have a non-zero label in the regions array)
-        region_pixels = self.regions[self.current_image_index] > 0
+        return adjusted_projections
 
-        # Replace these pixels with white (255 for a grayscale image)
-        overlay_image[region_pixels] = 255
+    def generate_roi_from_projections(edge_map, seed, adjusted_projections, angle_step=1):
+        angles = np.arange(0, 360, angle_step)
+        polygon_points_x = []
+        polygon_points_y = []
 
-        overlay_color_image = cv2.cvtColor(overlay_image, cv2.COLOR_GRAY2BGR)
-        props = regionprops(self.regions[self.current_image_index])
+        for i, length in enumerate(adjusted_projections):
+            angle = np.radians(angles[i])
+            x = seed[0] + length * np.cos(angle)
+            y = seed[1] + length * np.sin(angle)
+            polygon_points_x.append(x)
+            polygon_points_y.append(y)
 
-        for prop in props:
-            # Skip background
-            if prop.label == 0:
-                continue
-
-            # Get the centroid coordinates
-            y, x = prop.centroid
-
-            # Draw the region number at the centroid
-            cv2.putText(overlay_color_image, str(prop.label), (int(x), int(y)), cv2.FONT_HERSHEY_SIMPLEX,
-                        0.4, (0, 0, 0), 1)
-
-        overlay_photo = df.convert_to_photoimage(self, overlay_color_image)
-        self.drg_segment_canvas.itemconfig(self.drg_segment_canvas_image_item, image=overlay_photo)
-
-        self.drg_segment_photo = overlay_photo
+        rr, cc = polygon(polygon_points_y, polygon_points_x, shape=edge_map.shape)
+        roi_map = np.zeros(edge_map.shape, dtype=np.uint8)
+        roi_map[rr, cc] = 1  # Fill the polygon to generate ROI
+        return roi_map
 
     def grow_regions():
-        if not self.process_statuses[self.current_image_index][0]:
-            messagebox.showerror("Error", "Segmentation requires edge maps",
+        if not all(self.process_statuses[self.current_image_index]):
+            messagebox.showerror("Error", "Segmentation requires edge maps, seeds, and diameters",
                                  parent=self.drg_segment_window)
-        elif not self.process_statuses[self.current_image_index][1]:
-            messagebox.showerror("Error", "Segmentation requires seeds",
-                                 parent=self.drg_segment_window)
-        elif not self.process_statuses[self.current_image_index][2]:
-            messagebox.showerror("Error", "Segmentation requires diameters",
-                                 parent=self.drg_segment_window)
-        else:
-            edge_map = self.edge_maps[self.current_image_index]
-            mask = np.logical_not(edge_map)
-            region_map = np.zeros(edge_map.shape, dtype=int)
+            return
 
-            region_label = 1
+        edge_map = self.edge_maps[self.current_image_index]
+        composite_roi_map = np.zeros(edge_map.shape, dtype=np.uint8)
+        base_image = self.contrasted_gray_images[self.current_image_index]
 
-            for coords, _ in self.seeds[self.current_image_index][:]:
-                x = coords[0]
-                y = coords[1]
+        for seed, _ in self.seeds[self.current_image_index][:]:
+            adjusted_projections = radial_projection_with_adjustment(edge_map, seed)
+            roi_map = generate_roi_from_projections(edge_map, seed, adjusted_projections)
+            composite_roi_map = np.logical_or(composite_roi_map, roi_map).astype(np.uint8)
 
-                if edge_map[y, x] == 0:
-                    region_map = morphology.flood_fill(region_map, (y, x), region_label, connectivity=1)
-                    region_label += 1
+        edge_overlay = np.where(composite_roi_map == 1, 255, base_image)
+        edge_photo = df.convert_to_photoimage(self, edge_overlay)
 
-            print(region_map)
-            self.regions[self.current_image_index] = region_map
-            overlay_regions_as_white()
+        self.drg_segment_photo = edge_photo
+        self.drg_segment_canvas.itemconfig(self.drg_segment_canvas_image_item, image=edge_photo)
 
     # Load the current image
     current_image = cv2.imread(self.image_file_paths[self.current_image_index])
@@ -159,13 +154,11 @@ def drg_segment(self):
 
 
 def draw_diameters(self):
-    self.diameters_photo = None
     # Create a new window for DRG Segmentation
     diameters_window = tk.Toplevel(self.root)
     diameters_window.title("Draw diameters")
-    diameters_window.state("zoomed")
 
-    self.DRG_diameter.clear()
+    self.DRG_diameter[self.current_image_index] = []
 
     def save_diameters():
         if not self.DRG_line_ids:
@@ -174,13 +167,19 @@ def draw_diameters(self):
                                  parent=diameters_window)
 
         else:
-            self.DRG_diameter = [np.linalg.norm(np.array(start) - np.array(end)) for start, end, _ in self.DRG_line_ids]
+            self.DRG_diameter[self.current_image_index] = [np.linalg.norm(np.array(start) - np.array(end)) for
+                                                           start, end, _ in self.DRG_line_ids]
             # Clear lines information
             self.DRG_line_ids.clear()
 
             diameters_window.destroy()
             messagebox.showinfo("Status", "Save successful!", parent=self.drg_segment_window)
             self.process_statuses[self.current_image_index][2] = True
+
+            self.drg_segment_canvas.unbind("<Button-1>")
+            self.drg_segment_canvas.unbind("<B1-Motion>")
+            self.drg_segment_canvas.unbind("<ButtonRelease-1>")
+            self.drg_segment_canvas.unbind("<Button-3>")  # Right-click to delete a line
 
     def start_line(event):
         """Function to start drawing a line."""
@@ -189,17 +188,17 @@ def draw_diameters(self):
     def draw_line(event):
         """Function to draw a line (temporary)."""
         if hasattr(self, 'temp_line'):
-            self.diameters_canvas.delete(self.temp_line)
-        self.temp_line = self.diameters_canvas.create_line(self.draw_start[0], self.draw_start[1], event.x, event.y,
+            self.drg_segment_canvas.delete(self.temp_line)
+        self.temp_line = self.drg_segment_canvas.create_line(self.draw_start[0], self.draw_start[1], event.x, event.y,
                                                            fill="white", width=3, tags="temp_line")
 
     def end_line(event):
         """Function to finalize drawing a line."""
-        line_id = self.diameters_canvas.create_line(self.draw_start[0], self.draw_start[1], event.x, event.y,
+        line_id = self.drg_segment_canvas.create_line(self.draw_start[0], self.draw_start[1], event.x, event.y,
                                                     fill="white", width=3)
         self.DRG_line_ids.append((self.draw_start, (event.x, event.y), line_id))
         if hasattr(self, 'temp_line'):
-            self.diameters_canvas.delete(self.temp_line)
+            self.drg_segment_canvas.delete(self.temp_line)
             delattr(self, 'temp_line')
 
     def delete_line(event):
@@ -207,37 +206,26 @@ def draw_diameters(self):
         proximity_threshold = 30  # Lower proximity threshold
         for start, end, line_id in self.DRG_line_ids[:]:
             if cv2.pointPolygonTest(np.array([start, end]), (event.x, event.y), True) >= -proximity_threshold:
-                self.diameters_canvas.delete(line_id)
+                self.drg_segment_canvas.delete(line_id)
                 self.DRG_line_ids.remove((start, end, line_id))
                 break
 
-    initial_image = self.contrasted_gray_images[self.current_image_index]
-    photo = df.convert_to_photoimage(self, initial_image)
-    self.diameters_photo = photo
-
-    self.diameters_canvas = tk.Canvas(diameters_window, bg='white', width=photo.width(),
-                                      height=photo.height())
-    self.diameters_canvas_image_item = self.diameters_canvas.create_image(0, 0, anchor="nw", image=photo)
-    self.diameters_canvas.pack()
-
-    save_button = tk.Button(diameters_window, text="Save", command=lambda: save_diameters())
+    save_button = tk.Button(self.drg_segment_window, text="Save", command=lambda: save_diameters())
     save_button.pack()
 
     # Bind events for line drawing
-    diameters_window.bind("<Button-1>", start_line)
-    diameters_window.bind("<B1-Motion>", draw_line)
-    diameters_window.bind("<ButtonRelease-1>", end_line)
-    diameters_window.bind("<Button-3>", delete_line)  # Right-click to delete a line
+    self.drg_segment_canvas.bind("<Button-1>", start_line)
+    self.drg_segment_canvas.bind("<B1-Motion>", draw_line)
+    self.drg_segment_canvas.bind("<ButtonRelease-1>", end_line)
+    self.drg_segment_canvas.bind("<Button-3>", delete_line)  # Right-click to delete a line
 
     diameters_window.mainloop()
 
 
 def set_seeds(self):
-    self.seeds_photo = None
     # Create a new window for DRG Segmentation
     seeds_window = tk.Toplevel(self.root)
     seeds_window.title("Set Seeds")
-    seeds_window.state("zoomed")
 
     def save_seeds():
         if not self.seeds[self.current_image_index]:
@@ -248,10 +236,12 @@ def set_seeds(self):
             seeds_window.destroy()
             messagebox.showinfo("Status", "Save successful!", parent=self.drg_segment_window)
             self.process_statuses[self.current_image_index][1] = True
+            self.drg_segment_canvas.unbind("<Button-1>")
+            self.drg_segment_canvas.unbind("<Button-3>")
 
     def add_seed(event):
-        seed_id = self.seeds_canvas.create_oval(event.x - 5, event.y - 5, event.x + 5, event.y + 5, fill='white',
-                                                width=2)
+        seed_id = self.drg_segment_canvas.create_oval(event.x - 5, event.y - 5, event.x + 5, event.y + 5, fill='white',
+                                                      width=2)
         self.seeds[self.current_image_index].append((np.array((event.x, event.y)), seed_id))
 
     def delete_seed(event):
@@ -260,26 +250,17 @@ def set_seeds(self):
             dist = np.linalg.norm(coords - (event.x, event.y))
             if dist <= proximity_threshold:
                 try:
-                    self.seeds_canvas.delete(seed_id)
+                    self.drg_segment_canvas.delete(seed_id)
                     self.seeds.remove((coords, seed_id))
                     break
                 except:
                     print("")
 
-    initial_image = self.contrasted_gray_images[self.current_image_index]
-    photo = df.convert_to_photoimage(self, initial_image)
-    self.seeds_photo = photo
-
-    self.seeds_canvas = tk.Canvas(seeds_window, bg='white', width=photo.width(),
-                                  height=photo.height())
-    self.seeds_canvas_image_item = self.seeds_canvas.create_image(0, 0, anchor="nw", image=photo)
-    self.seeds_canvas.pack()
-
     save_button = tk.Button(seeds_window, text="Save", command=lambda: save_seeds())
     save_button.pack()
 
-    self.seeds_canvas.bind("<Button-1>", add_seed)
-    self.seeds_canvas.bind("<Button-3>", delete_seed)
+    self.drg_segment_canvas.bind("<Button-1>", add_seed)
+    self.drg_segment_canvas.bind("<Button-3>", delete_seed)
 
     seeds_window.mainloop()
 
@@ -291,6 +272,7 @@ def edge_detect(self):
 
     initial_image = self.contrasted_gray_images[self.current_image_index]
     photo = df.convert_to_photoimage(self, initial_image)
+    self.drg_segment_image = initial_image
     self.drg_segment_photo = photo
     self.drg_segment_canvas.itemconfig(self.drg_segment_canvas_image_item, image=photo)
 
@@ -300,13 +282,22 @@ def edge_detect(self):
 
         # Apply Canny edge detection
         edges = cv2.Canny(blurred_image, int(threshold1), int(threshold2))
+        # Find contours in the edge map
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # Create a new blank map to draw the filtered contours
+        filtered_map = np.zeros_like(edges)
+        # Loop through the contours
+        for contour in contours:
+            # If contour is longer than the min_length, draw it on the new map
+            if cv2.arcLength(contour, closed=True) >= int(min_length):
+                cv2.drawContours(filtered_map, [contour], -1, 255, thickness=cv2.FILLED)
 
-        self.edge_maps[self.current_image_index] = edges
-        edge_overlay = np.where(edges == 255, 255, image)
-        # TODO: Filter by minimum length
-        # TODO: Add in contour completion
+        self.edge_maps[self.current_image_index] = filtered_map
+        edge_overlay = np.where(filtered_map == 255, 255, image)
+
         edge_photo = df.convert_to_photoimage(self, edge_overlay)
 
+        self.drg_segment_image = edge_overlay
         self.drg_segment_photo = edge_photo
         self.drg_segment_canvas.itemconfig(self.drg_segment_canvas_image_item, image=edge_photo)
 
@@ -404,6 +395,7 @@ def load_and_resize_images(self):
         gray_image = cv2.cvtColor(resized_image, cv2.COLOR_RGB2GRAY)
         self.gray_images.append(gray_image)
         self.contrasted_gray_images.append(gray_image)
+        self.DRG_diameter.append([])
         self.edge_maps.append(gray_image)
         self.edge_thresholds.append([0, 0])
         self.seeds.append([])
