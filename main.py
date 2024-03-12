@@ -24,6 +24,7 @@ class ImageLabelerApp:
         self.contrasted_gray_images = []
         self.edge_maps = []
         self.edge_thresholds = []
+        self.edge_delete_pos = []
         self.seeds = []
         self.process_statuses = []
         self.regions = []
@@ -107,11 +108,9 @@ class ImageLabelerApp:
         zoomed_image = np.ndarray(shape=(1, 1))
 
         if event.delta > 0:
-            self.zoom_level * 1.1
             zoomed_image = cv2.resize(image, (int(image.shape[0] * 1.1), int(image.shape[1] * 1.1)),
                                       interpolation=cv2.INTER_CUBIC)
         else:
-            self.zoom_level / 1.1
             zoomed_image = cv2.resize(image, (int(image.shape[0] / 1.1), int(image.shape[1] / 1.1)),
                                       interpolation=cv2.INTER_CUBIC)
 
@@ -152,12 +151,16 @@ class ImageLabelerApp:
         select_button_y = self.rect_start_y
         self.select_button.place(x=select_button_x, y=select_button_y, width=button_width, height=button_height)
 
-        self.rgb_split_button.place(x=select_button_x, y=select_button_y + 3.5 * gap, width=button_width, height=button_height)
+        self.rgb_split_button.place(x=select_button_x, y=select_button_y + 3.5 * gap, width=button_width,
+                                    height=button_height)
 
-        self.color_channel_combobox.place(x=select_button_x, y=select_button_y + 14 * gap, width=button_width, height=button_height)
-        self.drg_segment_button.place(x=select_button_x, y=select_button_y + 17.5 * gap, width=button_width, height=button_height)
+        self.color_channel_combobox.place(x=select_button_x, y=select_button_y + 14 * gap, width=button_width,
+                                          height=button_height)
+        self.drg_segment_button.place(x=select_button_x, y=select_button_y + 17.5 * gap, width=button_width,
+                                      height=button_height)
 
-        self.channel_label.place(x=select_button_x + button_width/2, y=select_button_y + 10.5 * gap + button_height/2, anchor="n")
+        self.channel_label.place(x=select_button_x + button_width/2, y=select_button_y + 10.5 * gap + button_height/2,
+                                 anchor="n")
 
 
 if __name__ == "__main__":

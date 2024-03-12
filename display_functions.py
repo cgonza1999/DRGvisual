@@ -1,9 +1,8 @@
-from PIL import Image, ImageTk, ImageDraw
+from PIL import Image, ImageTk
 import tkinter as tk
 import os
 import cv2
 import numpy as np
-import cv_functions as cvf
 
 
 def rgb_split(self):
@@ -40,9 +39,9 @@ def rgb_split(self):
                                interpolation=cv2.INTER_CUBIC)
 
     # Convert the RGB images to PhotoImage for displaying with Tkinter
-    r_photo = convert_to_photoimage(self, r_rgb_resized)
-    g_photo = convert_to_photoimage(self, g_rgb_resized)
-    b_photo = convert_to_photoimage(self, b_rgb_resized)
+    r_photo = convert_to_photoimage(r_rgb_resized)
+    g_photo = convert_to_photoimage(g_rgb_resized)
+    b_photo = convert_to_photoimage(b_rgb_resized)
 
     # Create a new window for displaying the RGB split
     rgb_window = tk.Toplevel(self.root)
@@ -68,7 +67,7 @@ def rgb_split(self):
     rgb_window.mainloop()
 
 
-def convert_to_photoimage(self, image):
+def convert_to_photoimage(image):
     # Convert the image to PIL Image
     pil_image = Image.fromarray(image)
     # Convert the PIL Image to PhotoImage for displaying with Tkinter

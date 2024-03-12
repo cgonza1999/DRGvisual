@@ -5,8 +5,6 @@ from tkinter import filedialog
 from tkinter import messagebox
 import numpy as np
 from skimage.draw import polygon
-from skimage import morphology
-from skimage.measure import regionprops
 
 
 def drg_segment(self):
@@ -18,7 +16,7 @@ def drg_segment(self):
         gray = self.gray_images[self.current_image_index]
         enhanced = clahe.apply(gray)
         self.contrasted_gray_images[self.current_image_index] = enhanced
-        contrasted_photo = df.convert_to_photoimage(self, enhanced)
+        contrasted_photo = df.convert_to_photoimage(enhanced)
 
         self.drg_segment_canvas.itemconfig(self.drg_segment_canvas_image_item, image=contrasted_photo)
 
@@ -36,8 +34,8 @@ def drg_segment(self):
                 dy = int(length * np.sin(np.radians(angle)))
                 x, y = seed[0] + dx, seed[1] + dy
                 if not (0 <= x < edge_map.shape[1] and 0 <= y < edge_map.shape[0]) or edge_map[y, x] == 255:
+                    projections.append(length)
                     break
-            projections.append(length)
 
         # Adjust projections
         adjusted_projections = []
@@ -84,7 +82,7 @@ def drg_segment(self):
             composite_roi_map = np.logical_or(composite_roi_map, roi_map).astype(np.uint8)
 
         edge_overlay = np.where(composite_roi_map == 1, 255, base_image)
-        edge_photo = df.convert_to_photoimage(self, edge_overlay)
+        edge_photo = df.convert_to_photoimage(edge_overlay)
 
         self.drg_segment_photo = edge_photo
         self.drg_segment_canvas.itemconfig(self.drg_segment_canvas_image_item, image=edge_photo)
@@ -98,6 +96,9 @@ def drg_segment(self):
 
     channel = self.channel_var.get()
 
+    # Convert the image to PhotoImage for displaying with Tkinter
+    photo = df.convert_to_photoimage(r)
+
     match channel:
         case 'Red':
             # Create separate RGB images for each channel
@@ -105,7 +106,7 @@ def drg_segment(self):
             self.contrasted_gray_images[self.current_image_index] = r
 
             # Convert the image to PhotoImage for displaying with Tkinter
-            photo = df.convert_to_photoimage(self, r)
+            photo = df.convert_to_photoimage(r)
 
         case 'Green':
             # Create separate RGB images for each channel
@@ -113,7 +114,7 @@ def drg_segment(self):
             self.contrasted_gray_images[self.current_image_index] = g
 
             # Convert the image to PhotoImage for displaying with Tkinter
-            photo = df.convert_to_photoimage(self, g)
+            photo = df.convert_to_photoimage(g)
 
         case 'Blue':
             # Create separate RGB images for each channel
@@ -121,7 +122,7 @@ def drg_segment(self):
             self.contrasted_gray_images[self.current_image_index] = b
 
             # Convert the image to PhotoImage for displaying with Tkinter
-            photo = df.convert_to_photoimage(self, b)
+            photo = df.convert_to_photoimage(b)
 
     # Display instruction message box
     messagebox.showinfo("Instructions", "Follow segmentation steps in order starting with 1. Edges")
@@ -190,12 +191,12 @@ def draw_diameters(self):
         if hasattr(self, 'temp_line'):
             self.drg_segment_canvas.delete(self.temp_line)
         self.temp_line = self.drg_segment_canvas.create_line(self.draw_start[0], self.draw_start[1], event.x, event.y,
-                                                           fill="white", width=3, tags="temp_line")
+                                                             fill="white", width=3, tags="temp_line")
 
     def end_line(event):
         """Function to finalize drawing a line."""
         line_id = self.drg_segment_canvas.create_line(self.draw_start[0], self.draw_start[1], event.x, event.y,
-                                                    fill="white", width=3)
+                                                      fill="white", width=3)
         self.DRG_line_ids.append((self.draw_start, (event.x, event.y), line_id))
         if hasattr(self, 'temp_line'):
             self.drg_segment_canvas.delete(self.temp_line)
@@ -210,7 +211,7 @@ def draw_diameters(self):
                 self.DRG_line_ids.remove((start, end, line_id))
                 break
 
-    save_button = tk.Button(self.drg_segment_window, text="Save", command=lambda: save_diameters())
+    save_button = tk.Button(diameters_window, text="Save", command=lambda: save_diameters())
     save_button.pack()
 
     # Bind events for line drawing
@@ -268,38 +269,67 @@ def set_seeds(self):
 def edge_detect(self):
     # Create a new window for DRG Segmentation
     edges_window = tk.Toplevel(self.root)
+    edges_window.attributes('-topmost', True)
     edges_window.title("Edge Detection Settings")
 
     initial_image = self.contrasted_gray_images[self.current_image_index]
-    photo = df.convert_to_photoimage(self, initial_image)
+    photo = df.convert_to_photoimage(initial_image)
     self.drg_segment_image = initial_image
     self.drg_segment_photo = photo
     self.drg_segment_canvas.itemconfig(self.drg_segment_canvas_image_item, image=photo)
 
-    def apply_edges(threshold1, threshold2, min_length, image):
-        # Apply Gaussian Blur to smooth the image and reduce noise
-        blurred_image = cv2.GaussianBlur(image, (5, 5), 0)
+    def apply_edges(threshold1, threshold2, min_length, image, event=None):
+        # Initialize or update the edge map
+        if event is None:
+            # Your existing edge application logic
+            blurred_image = cv2.GaussianBlur(image, (5, 5), 0)
+            edges = cv2.Canny(blurred_image, int(threshold1), int(threshold2))
 
-        # Apply Canny edge detection
-        edges = cv2.Canny(blurred_image, int(threshold1), int(threshold2))
-        # Find contours in the edge map
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        # Create a new blank map to draw the filtered contours
-        filtered_map = np.zeros_like(edges)
-        # Loop through the contours
-        for contour in contours:
-            # If contour is longer than the min_length, draw it on the new map
-            if cv2.arcLength(contour, closed=True) >= int(min_length):
-                cv2.drawContours(filtered_map, [contour], -1, 255, thickness=cv2.FILLED)
+            # Find contours and filter based on length
+            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            filtered_map = np.zeros_like(edges)
 
-        self.edge_maps[self.current_image_index] = filtered_map
-        edge_overlay = np.where(filtered_map == 255, 255, image)
+            for contour in contours:
+                if cv2.arcLength(contour, closed=True) >= int(min_length):
+                    cv2.drawContours(filtered_map, [contour], -1, 255, thickness=cv2.FILLED)
 
-        edge_photo = df.convert_to_photoimage(self, edge_overlay)
+            # Update the display with filtered edge map
+            edge_overlay = np.where(filtered_map == 255, 255, image)
+            edge_photo = df.convert_to_photoimage(edge_overlay)
+            self.edge_maps[self.current_image_index] = filtered_map
+            self.drg_segment_photo = edge_photo
+            self.drg_segment_canvas.itemconfig(self.drg_segment_canvas_image_item, image=edge_photo)
+        else:
+            # Contour deletion logic with nearest contour finding integrated
+            contours, _ = cv2.findContours(self.edge_maps[self.current_image_index].copy(), cv2.RETR_EXTERNAL,
+                                           cv2.CHAIN_APPROX_SIMPLE)
 
-        self.drg_segment_image = edge_overlay
-        self.drg_segment_photo = edge_photo
-        self.drg_segment_canvas.itemconfig(self.drg_segment_canvas_image_item, image=edge_photo)
+            # Convert event coordinates to the closest point on any contour
+            click_pos = np.array([event.x, event.y])
+            min_distance = np.inf
+            nearest_contour_index = None
+
+            # Define a threshold distance for deleting a contour
+            deletion_distance_threshold = 15  # This value may need adjustment based on your specific use case
+
+            for i, contour in enumerate(contours):
+                distance = cv2.pointPolygonTest(contour, (event.x, event.y), True)
+                # Adjust the condition to check if the click is within the deletion threshold
+                if 0 <= distance < deletion_distance_threshold:
+                    min_distance = distance
+                    nearest_contour_index = i
+
+            # If a nearest contour is found, delete it
+            if nearest_contour_index is not None:
+                cv2.drawContours(self.edge_maps[self.current_image_index], [contours[nearest_contour_index]], -1, 0,
+                                 thickness=-1)
+
+            # Refresh the display after contour deletion
+            edge_overlay = np.where(self.edge_maps[self.current_image_index] == 255, 255, image)
+            edge_photo = df.convert_to_photoimage(edge_overlay)
+            self.drg_segment_photo = edge_photo
+            self.drg_segment_canvas.itemconfig(self.drg_segment_canvas_image_item, image=edge_photo)
+
 
     def save_edges():
         self.edge_thresholds[self.current_image_index][0] = t1_slider_value.get()
@@ -308,6 +338,7 @@ def edge_detect(self):
         edges_window.destroy()
         messagebox.showinfo("Status", "Save successful!", parent=self.drg_segment_window)
         self.process_statuses[self.current_image_index][0] = True
+        self.drg_segment_canvas.unbind("<Button-3>")
 
     apply_edges(50, 150, 20, initial_image)
 
@@ -335,6 +366,9 @@ def edge_detect(self):
     min_slider.pack()
     save_button.pack()
 
+    self.drg_segment_canvas.bind("<Button-3>",
+                                 lambda event: apply_edges(t1_slider_value.get(), t2_slider_value.get(),
+                                                                min_slider_value.get(), initial_image, event))
     edges_window.mainloop()
 
 
@@ -389,7 +423,7 @@ def load_and_resize_images(self):
         self.cv2_images.append(resized_image)
 
         # Convert to PIL image and then to PhotoImage for Tkinter
-        photo_image = df.convert_to_photoimage(self, resized_image)
+        photo_image = df.convert_to_photoimage(resized_image)
         self.photoimages.append(photo_image)
 
         gray_image = cv2.cvtColor(resized_image, cv2.COLOR_RGB2GRAY)
