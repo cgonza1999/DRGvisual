@@ -28,6 +28,10 @@ class ImageLabelerApp:
         self.seeds = []
         self.process_statuses = []
         self.regions = []
+        self.positive_areas = []
+        self.positive_intensities = []
+        self.background_intensities = []
+        self.ctcf = []
         self.image_file_paths = []  # Stores the file paths of the images
         self.image_labels = []  # Stores the labels for the images
         self.DRG_diameter = []

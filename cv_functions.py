@@ -5,6 +5,7 @@ from tkinter import filedialog
 from tkinter import messagebox
 import numpy as np
 from skimage.draw import polygon
+from skimage import filters
 
 
 def drg_segment(self):
@@ -22,32 +23,57 @@ def drg_segment(self):
 
         self.drg_segment_photo = contrasted_photo
 
-    def radial_projection_with_adjustment(edge_map, seed, angle_step=1, length_difference_threshold=5):
+    def targeted_smoothing(projections, window_size=3, variance_threshold=10):
+        """
+        Smooth areas with high variance in the projection lengths and preserve low variance areas.
+
+        :param projections: List or numpy array of projection lengths.
+        :param window_size: The size of the window to calculate local variance.
+        :param variance_threshold: Threshold of variance to start applying smoothing.
+        :return: Smoothed list of projection lengths.
+        """
+        length = len(projections)
+        smoothed_projections = np.copy(projections)
+        half_window = window_size // 2
+
+        for i in range(length):
+            start_index = max(0, i - half_window)
+            end_index = min(length, i + half_window + 1)
+            window = projections[start_index:end_index]
+
+            # Calculate local variance in the window
+            local_variance = np.var(window)
+
+            # Check if the local variance exceeds the threshold
+            if local_variance > variance_threshold:
+                # Apply smoothing for high variance regions
+                local_mean = np.mean(window)
+                smoothed_projections[i] = local_mean
+            # Else, leave the projection as is for low variance regions
+
+        return smoothed_projections
+
+    def radial_projection_with_adjustment(edge_map, seed, angle_step=1):
         projections = []
         angles = np.arange(0, 360, angle_step)
 
-        max_length = int(1.2 * np.max(self.DRG_diameter[self.current_image_index]) / 2)
+        max_length = int(np.max(self.DRG_diameter[self.current_image_index]) / 2)
         # Calculate projections
         for angle in angles:
             for length in range(1, max_length + 1):
                 dx = int(length * np.cos(np.radians(angle)))
                 dy = int(length * np.sin(np.radians(angle)))
                 x, y = seed[0] + dx, seed[1] + dy
-                if not (0 <= x < edge_map.shape[1] and 0 <= y < edge_map.shape[0]) or edge_map[y, x] == 255:
+                if not (0 <= x < edge_map.shape[1] and 0 <= y < edge_map.shape[0]) or edge_map[
+                    y, x] == 255 or length == max_length:
                     projections.append(length)
                     break
 
-        # Adjust projections
-        adjusted_projections = []
+        for i in range(0, len(projections)):
+            if projections[i] == max_length:
+                projections[i] = np.median(projections[i - 3:i - 1])
 
-        for i, length in enumerate(projections):
-            if i > 0 and abs(projections[i] - projections[i - 1]) > length_difference_threshold:
-                length = min(projections[i], projections[i - 1])
-            if i < len(projections) - 1 and abs(projections[i] - projections[i + 1]) > length_difference_threshold:
-                length = min(projections[i], projections[i + 1])
-            adjusted_projections.append(length)
-
-        return adjusted_projections
+        return targeted_smoothing(projections)
 
     def generate_roi_from_projections(edge_map, seed, adjusted_projections, angle_step=1):
         angles = np.arange(0, 360, angle_step)
@@ -74,18 +100,38 @@ def drg_segment(self):
 
         edge_map = self.edge_maps[self.current_image_index]
         composite_roi_map = np.zeros(edge_map.shape, dtype=np.uint8)
-        base_image = self.contrasted_gray_images[self.current_image_index]
-
+        base_image = self.gray_images[self.current_image_index]
+        contrasted_image = self.contrasted_gray_images[self.current_image_index]
         for seed, _ in self.seeds[self.current_image_index][:]:
             adjusted_projections = radial_projection_with_adjustment(edge_map, seed)
             roi_map = generate_roi_from_projections(edge_map, seed, adjusted_projections)
             composite_roi_map = np.logical_or(composite_roi_map, roi_map).astype(np.uint8)
 
-        edge_overlay = np.where(composite_roi_map == 1, 255, base_image)
-        edge_photo = df.convert_to_photoimage(edge_overlay)
+            masked_region = np.where(roi_map != 0, base_image, 0)
+            isodata_threshold = filters.threshold_isodata(masked_region[masked_region > 0])
+            isodata_region = np.where(masked_region >= isodata_threshold, base_image, 0)
+            self.positive_areas[self.current_image_index].append(np.count_nonzero(isodata_region))
+            self.positive_intensities[self.current_image_index].append(np.mean(isodata_region[isodata_region != 0]))
+
+        base_image_roi = np.where(composite_roi_map == 1, 255, contrasted_image)
+
+        inverse_masked_region = np.where(composite_roi_map == 0, base_image, 0)
+
+        li_threshold = filters.threshold_li(inverse_masked_region[inverse_masked_region > 0])
+        li_region = np.where(inverse_masked_region >= li_threshold, base_image, 0)
+        self.background_intensities[self.current_image_index] = np.mean(li_region[li_region != 0])
+
+        for i in range(0, len(self.positive_areas[self.current_image_index])):
+            intensity_diff = self.positive_intensities[self.current_image_index][i] - self.background_intensities[
+                self.current_image_index]
+            self.ctcf[self.current_image_index].append(
+                intensity_diff * self.positive_areas[self.current_image_index][i])
+
+        edge_photo = df.convert_to_photoimage(base_image_roi)
 
         self.drg_segment_photo = edge_photo
-        self.drg_segment_canvas.itemconfig(self.drg_segment_canvas_image_item, image=edge_photo)
+
+        self.drg_segment_canvas.create_image(0, 0, anchor="nw", image=edge_photo)
 
     # Load the current image
     current_image = cv2.imread(self.image_file_paths[self.current_image_index])
@@ -159,6 +205,8 @@ def draw_diameters(self):
     diameters_window = tk.Toplevel(self.root)
     diameters_window.title("Draw diameters")
 
+    self.draw_start = None
+
     self.DRG_diameter[self.current_image_index] = []
 
     def save_diameters():
@@ -190,17 +238,20 @@ def draw_diameters(self):
         """Function to draw a line (temporary)."""
         if hasattr(self, 'temp_line'):
             self.drg_segment_canvas.delete(self.temp_line)
-        self.temp_line = self.drg_segment_canvas.create_line(self.draw_start[0], self.draw_start[1], event.x, event.y,
-                                                             fill="white", width=3, tags="temp_line")
+        if self.draw_start:
+            self.temp_line = self.drg_segment_canvas.create_line(self.draw_start[0], self.draw_start[1], event.x,
+                                                                 event.y,
+                                                                 fill="white", width=3, tags="temp_line")
 
     def end_line(event):
         """Function to finalize drawing a line."""
-        line_id = self.drg_segment_canvas.create_line(self.draw_start[0], self.draw_start[1], event.x, event.y,
-                                                      fill="white", width=3)
-        self.DRG_line_ids.append((self.draw_start, (event.x, event.y), line_id))
-        if hasattr(self, 'temp_line'):
-            self.drg_segment_canvas.delete(self.temp_line)
-            delattr(self, 'temp_line')
+        if self.draw_start:
+            line_id = self.drg_segment_canvas.create_line(self.draw_start[0], self.draw_start[1], event.x, event.y,
+                                                          fill="white", width=3)
+            self.DRG_line_ids.append((self.draw_start, (event.x, event.y), line_id))
+            if hasattr(self, 'temp_line'):
+                self.drg_segment_canvas.delete(self.temp_line)
+                delattr(self, 'temp_line')
 
     def delete_line(event):
         """Function to delete a line."""
@@ -304,22 +355,19 @@ def edge_detect(self):
             contours, _ = cv2.findContours(self.edge_maps[self.current_image_index].copy(), cv2.RETR_EXTERNAL,
                                            cv2.CHAIN_APPROX_SIMPLE)
 
-            # Convert event coordinates to the closest point on any contour
             click_pos = np.array([event.x, event.y])
-            min_distance = np.inf
             nearest_contour_index = None
-
-            # Define a threshold distance for deleting a contour
-            deletion_distance_threshold = 15  # This value may need adjustment based on your specific use case
+            min_distance = np.inf
 
             for i, contour in enumerate(contours):
-                distance = cv2.pointPolygonTest(contour, (event.x, event.y), True)
-                # Adjust the condition to check if the click is within the deletion threshold
-                if 0 <= distance < deletion_distance_threshold:
-                    min_distance = distance
+                # Calculate the minimum distance from the click to this contour
+                distances = np.sqrt(((contour - click_pos) ** 2).sum(axis=2))
+                min_contour_distance = np.min(distances)
+                if min_contour_distance < min_distance:
+                    min_distance = min_contour_distance
                     nearest_contour_index = i
 
-            # If a nearest contour is found, delete it
+            # If a nearest contour is found and within deletion threshold, delete it
             if nearest_contour_index is not None:
                 cv2.drawContours(self.edge_maps[self.current_image_index], [contours[nearest_contour_index]], -1, 0,
                                  thickness=-1)
@@ -329,7 +377,6 @@ def edge_detect(self):
             edge_photo = df.convert_to_photoimage(edge_overlay)
             self.drg_segment_photo = edge_photo
             self.drg_segment_canvas.itemconfig(self.drg_segment_canvas_image_item, image=edge_photo)
-
 
     def save_edges():
         self.edge_thresholds[self.current_image_index][0] = t1_slider_value.get()
@@ -368,7 +415,7 @@ def edge_detect(self):
 
     self.drg_segment_canvas.bind("<Button-3>",
                                  lambda event: apply_edges(t1_slider_value.get(), t2_slider_value.get(),
-                                                                min_slider_value.get(), initial_image, event))
+                                                           min_slider_value.get(), initial_image, event))
     edges_window.mainloop()
 
 
@@ -435,3 +482,7 @@ def load_and_resize_images(self):
         self.seeds.append([])
         self.process_statuses.append([False, False, False])
         self.regions.append([])
+        self.positive_areas.append([])
+        self.positive_intensities.append([])
+        self.background_intensities.append(0)
+        self.ctcf.append([])
