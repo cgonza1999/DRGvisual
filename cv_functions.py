@@ -64,8 +64,8 @@ def drg_segment(self):
                 dx = int(length * np.cos(np.radians(angle)))
                 dy = int(length * np.sin(np.radians(angle)))
                 x, y = seed[0] + dx, seed[1] + dy
-                if not (0 <= x < edge_map.shape[1] and 0 <= y < edge_map.shape[0]) or edge_map[
-                    y, x] == 255 or length == max_length:
+                if not (0 <= x < edge_map.shape[1] and
+                        0 <= y < edge_map.shape[0]) or edge_map[y, x] == 255 or length == max_length:
                     projections.append(length)
                     break
 
@@ -301,12 +301,9 @@ def set_seeds(self):
         for coords, seed_id in self.seeds[self.current_image_index][:]:
             dist = np.linalg.norm(coords - (event.x, event.y))
             if dist <= proximity_threshold:
-                try:
-                    self.drg_segment_canvas.delete(seed_id)
-                    self.seeds.remove((coords, seed_id))
-                    break
-                except:
-                    print("")
+                self.drg_segment_canvas.delete(seed_id)
+                self.seeds.remove((coords, seed_id))
+                break
 
     save_button = tk.Button(seeds_window, text="Save", command=lambda: save_seeds())
     save_button.pack()
@@ -367,7 +364,7 @@ def edge_detect(self):
                     min_distance = min_contour_distance
                     nearest_contour_index = i
 
-            # If a nearest contour is found and within deletion threshold, delete it
+            # If the nearest contour is found and within deletion threshold, delete it
             if nearest_contour_index is not None:
                 cv2.drawContours(self.edge_maps[self.current_image_index], [contours[nearest_contour_index]], -1, 0,
                                  thickness=-1)
