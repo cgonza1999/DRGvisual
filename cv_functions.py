@@ -111,7 +111,7 @@ def grow_regions(self):
         isodata_threshold = filters.threshold_isodata(masked_region[masked_region > 0])
         isodata_region = np.where(masked_region >= isodata_threshold, base_image, 0)
         self.positive_areas[self.current_image_index].append(np.count_nonzero(isodata_region))
-        self.positive_intensities[self.current_image_index].append(np.mean(isodata_region[isodata_region != 0]))
+        self.positive_intensities[self.current_image_index].append(np.mean(isodata_region[isodata_region > 0]))
 
     base_image_roi = np.where(composite_roi_map == 1, 255, contrasted_image)
 
@@ -127,6 +127,8 @@ def grow_regions(self):
         self.ctcf[self.current_image_index].append(
             intensity_diff * self.positive_areas[self.current_image_index][i])
 
+    for x in self.ctcf[self.current_image_index]:
+        print(x)
     edge_photo = df.convert_to_photoimage(base_image_roi)
 
     self.drg_segment_photo = edge_photo
@@ -170,7 +172,7 @@ def radial_projection_with_adjustment(self, edge_map, seed, angle_step=1):
 
     for i in range(0, len(projections)):
         if projections[i] == max_length:
-            projections[i] = np.median(projections[i - 3:i - 1])
+            projections[i] = projections[i - 1]
 
     return targeted_smoothing(projections)
 

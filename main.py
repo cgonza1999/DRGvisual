@@ -14,7 +14,7 @@ class ImageLabelerApp:
         # Set up the main window
         self.root = root
         self.root.state('zoomed')  # Maximize the window
-
+        self.root.title("DRGvisual")
         # Canvas for image display
         self.setup_canvas()
 
@@ -119,10 +119,10 @@ class ImageLabelerApp:
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
 
-        button_width = int(0.05 * screen_width)
-        button_height = int(30 * screen_height / 1440)  # Static height for simplicity
-        wgap = int(20 * screen_width / 2560)  # Gap between buttons and other elements
-        hgap = int(20 * screen_height / 1440)  # Gap between buttons and other elements
+        button_width = int(0.07 * screen_width)
+        button_height = int(0.025 * screen_height)  # Static height for simplicity
+        wgap = int(0.008 * screen_width)  # Gap between buttons and other elements
+        hgap = int(0.014 * screen_height)  # Gap between buttons and other elements
 
         # Calculate positions based on the defined dimensions and positions
         prev_button_x = self.rect_start_x
@@ -135,32 +135,30 @@ class ImageLabelerApp:
         self.next_button.place(x=next_button_x, y=buttons_y, width=button_width, height=button_height)
 
         # Select image files button
-        self.select_button.place(x=select_button_x, y=self.rect_start_y, width=button_width, height=button_height)
+        self.select_button.place(x=select_button_x, y=self.rect_start_y, height=button_height, width=button_width)
 
         # RGB split button positioned below the select button
-        self.rgb_split_button.place(x=select_button_x, y=self.rect_start_y + button_height + hgap, width=button_width,
-                                    height=button_height)
-
+        self.rgb_split_button.place(x=select_button_x, y=self.rect_start_y + button_height + hgap,
+                                    height=button_height, width=button_width)
 
         # Place the channel label and dropdown for color channel selection
         channel_label_x = select_button_x
         channel_label_y = self.rect_start_y + 3 * (button_height + hgap)
-        self.channel_label.place(x=channel_label_x, y=channel_label_y)
+        self.channel_label.place(x=channel_label_x, y=channel_label_y, height=button_height, width=button_width)
 
         # Dropdown below the channel label
-        self.color_channel_combobox.place(x=channel_label_x, y=channel_label_y + hgap, width=button_width,
-                                          height=button_height)
+        self.color_channel_combobox.place(x=channel_label_x, y=channel_label_y + button_height + hgap,
+                                          height=button_height, width=button_width)
         # DRG Segmentation button below RGB split button
-        self.drg_segment_button.place(x=channel_label_x, y=channel_label_y + 3 * hgap,
-                                      width=button_width, height=button_height)
-
+        self.drg_segment_button.place(x=channel_label_x,
+                                      y=channel_label_y + 2*(button_height + hgap), height=button_height, width=button_width)
 
         # Image label display setup
-        label_font = tkfont.Font(family="Segoe UI", size=14, weight="bold")
+        label_font = tkfont.Font(family="Segoe UI", size=12, weight="bold")
         self.image_label_display = tk.Label(self.root, font=label_font, bg='white')
         self.image_label_display.config(text="")
         # Positioning the label just below the canvas area
-        self.image_label_display.place(x=self.rect_center_x, y=self.rect_end_y + 20, anchor="n")
+        self.image_label_display.place(x=self.rect_center_x, y=self.rect_end_y+1, anchor="n")
 
         self.pan_start_x = None
         self.pan_start_y = None
