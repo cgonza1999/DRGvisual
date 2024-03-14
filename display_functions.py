@@ -5,106 +5,50 @@ import cv2
 import numpy as np
 
 
-def rgb_split(self):
-    if self.current_image_index is None or self.current_image_index < 0 or self.current_image_index >= len(
-            self.image_file_paths):
-        return  # Invalid index
-
-    # Get the file path of the currently displayed image
-    current_image = self.cv2_images[self.current_image_index]
-
-    # Split the image into its RGB channels
-    b, g, r = cv2.split(current_image)
-
-    # Create separate RGB images for each channel
-    r_rgb = cv2.merge([np.zeros_like(b), np.zeros_like(g), r])
-    g_rgb = cv2.merge([np.zeros_like(b), g, np.zeros_like(r)])
-    b_rgb = cv2.merge([b, np.zeros_like(g), np.zeros_like(r)])
-
-    # Get image dimensions
-    height, width, _ = r_rgb.shape
-
-    # Get the window dimensions
-    window_width = self.canvas.winfo_width()
-
-    new_width = window_width / 3
-    height_scale = new_width / width
-    new_height = height * height_scale
-
-    r_rgb_resized = cv2.resize(r_rgb, (int(new_width), int(new_height)),
-                               interpolation=cv2.INTER_CUBIC)
-    g_rgb_resized = cv2.resize(g_rgb, (int(new_width), int(new_height)),
-                               interpolation=cv2.INTER_CUBIC)
-    b_rgb_resized = cv2.resize(b_rgb, (int(new_width), int(new_height)),
-                               interpolation=cv2.INTER_CUBIC)
-
-    # Convert the RGB images to PhotoImage for displaying with Tkinter
-    r_photo = convert_to_photoimage(r_rgb_resized)
-    g_photo = convert_to_photoimage(g_rgb_resized)
-    b_photo = convert_to_photoimage(b_rgb_resized)
-
-    # Create a new window for displaying the RGB split
-    rgb_window = tk.Toplevel(self.root)
-    rgb_window.title("RGB Split")
-
-    # Update window geometry to maximize it
-    rgb_window.state('zoomed')
-
-    # Display the RGB images side by side with labels expanding to fill the window
-    r_label = tk.Label(rgb_window, image=r_photo)
-    r_label.grid(row=0, column=0, sticky="nsew")  # Expand in all directions
-
-    g_label = tk.Label(rgb_window, image=g_photo)
-    g_label.grid(row=0, column=1, sticky="nsew")  # Expand in all directions
-
-    b_label = tk.Label(rgb_window, image=b_photo)
-    b_label.grid(row=0, column=2, sticky="nsew")  # Expand in all directions
-
-    # Update window geometry to normalize it
-    rgb_window.state('normal')
-
-    # Run the Tkinter event loop
-    rgb_window.mainloop()
-
+# Image Display and Manipulation Functions
 
 def convert_to_photoimage(image):
-    # Convert the image to PIL Image
+    """
+    Convert a CV2 image to a Tkinter PhotoImage object.
+
+    :param image: The CV2 image to convert.
+    :return: The Tkinter PhotoImage object.
+    """
     pil_image = Image.fromarray(image)
-    # Convert the PIL Image to PhotoImage for displaying with Tkinter
     return ImageTk.PhotoImage(pil_image)
 
 
 def position_image_in_canvas(self, image):
-    # Get the dimensions of the resized image
-    image_height, image_width, _ = image.shape
+    """
+    Position and resize an image to fit within the application's canvas.
 
-    # Create a canvas-sized image with the same dimensions as the canvas
+    :param image: The CV2 image to be positioned.
+    :return: A new CV2 image positioned within a larger canvas-sized image.
+    """
+    # Calculate dimensions and position
+    image_height, image_width, _ = image.shape
     canvas_height = 10 * self.canvas.winfo_height()
     canvas_width = 10 * self.canvas.winfo_width()
-    canvas_image = np.zeros((canvas_height, canvas_width, 3), dtype=np.uint8)
-
-    # Calculate the position to place the resized image within the canvas-sized image
     start_x = int(canvas_width / 2 - image_width / 2 + self.image_offset_x)
     start_y = int(canvas_height / 2 - image_height / 2 + self.image_offset_y)
 
-    # Calculate the region where the resized image will be placed within the canvas-sized image
+    # Create and place the image
+    canvas_image = np.zeros((canvas_height, canvas_width, 3), dtype=np.uint8)
     end_x = start_x + image_width
     end_y = start_y + image_height
-
-    # Place the resized image within the canvas-sized image
     canvas_image[start_y:end_y, start_x:end_x] = image
 
     return canvas_image
 
 
-# Function to update the transparency mask and display the current image
 def display_current_image(self):
+    """
+    Display the current image on the application's canvas.
+    """
     if not self.cv2_images:
-        return  # No images to display
+        return
 
-    self.canvas.delete("image")  # Clear previous image
-
-    # Get the current image
+    self.canvas.delete("all")  # Clear the canvas before displaying a new image
     image = self.cv2_images[self.current_image_index]
     canvas_image = position_image_in_canvas(self, image)
 
@@ -136,55 +80,95 @@ def display_current_image(self):
 
     # Display the image on the canvas
     self.canvas.create_image(0, 0, anchor="nw", image=photo_image, tags="image")
-
-
 def update_image_label_display(self):
+    """
+    Update the display of the current image's label.
+    """
     if self.image_labels:
         self.image_label_display.config(text=self.image_labels[self.current_image_index])
 
 
+# Image Analysis and Transformation Functions
+
+def rgb_split(self):
+    """
+    Split the current image into its RGB components and display them.
+    """
+    if self.current_image_index is None:
+        return
+
+    current_image = self.cv2_images[self.current_image_index]
+    r, g, b = cv2.split(current_image)
+    r_rgb = cv2.merge([r, np.zeros_like(g), np.zeros_like(b)])
+    g_rgb = cv2.merge([np.zeros_like(r), g, np.zeros_like(b)])
+    b_rgb = cv2.merge([np.zeros_like(r), np.zeros_like(g), b])
+
+    # Resize for display
+    window_width = self.canvas.winfo_width() / 3
+    resized_images = [cv2.resize(img, (int(window_width), int(window_width * img.shape[0] / img.shape[1])),
+                                 interpolation=cv2.INTER_CUBIC) for img in [r_rgb, g_rgb, b_rgb]]
+
+    # Convert to PhotoImage and display
+    photos = [convert_to_photoimage(img) for img in resized_images]
+    rgb_window = tk.Toplevel(self.root)
+    rgb_window.title("RGB Split")
+    rgb_window.state('zoomed')
+
+    for i, photo in enumerate(photos):
+        tk.Label(rgb_window, image=photo).grid(row=0, column=i, sticky="nsew")
+
+    rgb_window.state('normal')
+    rgb_window.mainloop()
+
+
+# Navigation Functions
+
+def next_image(self):
+    """
+    Display the next image in the series.
+    """
+    if self.current_image_index is not None:
+        self.current_image_index = (self.current_image_index + 1) % len(self.cv2_images)
+        display_current_image(self)
+        update_image_label_display(self)
+
+
+def prev_image(self):
+    """
+    Display the previous image in the series.
+    """
+    if self.current_image_index is not None:
+        self.current_image_index = (self.current_image_index - 1) % len(self.cv2_images)
+        display_current_image(self)
+        update_image_label_display(self)
+
+
+# Image Labeling Functions
+
 def prompt_for_labels(self):
+    """
+    Prompt the user to label the loaded images.
+    """
     label_window = tk.Toplevel(self.root)
     label_window.title("Label Images")
+    entries = []
 
-    entries = []  # This will hold the entry widgets for labels
     for idx, path in enumerate(self.image_file_paths):
         row = tk.Frame(label_window)
         row.pack(fill='x')
-
         tk.Label(row, text=f"Label for image {idx + 1}:").pack(side='left')
 
         entry = tk.Entry(row)
         entry.pack(side='right', expand=True, fill='x')
-        entry.insert(0, os.path.basename(path))  # Default label is the basename of the file path
+        entry.insert(0, os.path.basename(path))
         entries.append(entry)
 
     def save_labels():
-        # Directly use 'entries' and 'label_window' from the enclosing scope
         self.image_labels = [entry.get() for entry in entries]
-        print("Labels saved:", self.image_labels)  # Placeholder for demonstration
         label_window.destroy()
-        self.current_image_index = 0  # Assuming you want to display the first image and its label
-        display_current_image(self)
-        update_image_label_display(self)
+        if self.cv2_images:
+            self.current_image_index = 0
+            display_current_image(self)
+            update_image_label_display(self)
 
-    save_button = tk.Button(label_window, text="Save Labels", command=save_labels)
-    save_button.pack()
-
-
-def next_image(self):
-    if self.photoimages:
-        self.current_image_index = (self.current_image_index + 1) % len(self.photoimages)
-        self.image_offset_x = 0
-        self.image_offset_y = 0
-        display_current_image(self)
-        update_image_label_display(self)  # Update the label display
-
-
-def prev_image(self):
-    if self.photoimages:
-        self.current_image_index = (self.current_image_index - 1) % len(self.photoimages)
-        self.image_offset_x = 0
-        self.image_offset_y = 0
-        display_current_image(self)
-        update_image_label_display(self)  # Update the label display
+    tk.Button(label_window, text="Save Labels", command=save_labels).pack()
