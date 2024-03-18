@@ -5,6 +5,8 @@ import numpy as np
 from skimage.draw import polygon
 from skimage import filters
 import display_functions as df
+import pandas as pd
+from datetime import datetime
 
 
 # Image Segmentation and Analysis Functions
@@ -15,6 +17,7 @@ def drg_segment(self):
     """
 
     self.drg_segment_photo = None
+    self.roi_photo = None
     self.drg_segment_image = None
 
     # Load the current image
@@ -36,7 +39,7 @@ def drg_segment(self):
             self.contrasted_gray_images[self.current_image_index] = r
 
             # Convert the image to PhotoImage for displaying with Tkinter
-            photo = df.convert_to_photoimage(r)
+            single_channel_im = cv2.merge([r, np.zeros_like(g), np.zeros_like(b)])
 
         case 'Green':
             # Create separate RGB images for each channel
@@ -44,15 +47,17 @@ def drg_segment(self):
             self.contrasted_gray_images[self.current_image_index] = g
 
             # Convert the image to PhotoImage for displaying with Tkinter
-            photo = df.convert_to_photoimage(g)
+            single_channel_im = cv2.merge([np.zeros_like(r), g, np.zeros_like(b)])
 
         case 'Blue':
             # Create separate RGB images for each channel
             self.gray_images[self.current_image_index] = b
             self.contrasted_gray_images[self.current_image_index] = b
 
-            # Convert the image to PhotoImage for displaying with Tkinter
-            photo = df.convert_to_photoimage(b)
+            single_channel_im = cv2.merge([np.zeros_like(r), np.zeros_like(g), b])
+
+    # Convert the image to PhotoImage for displaying with Tkinter
+    photo = df.convert_to_photoimage(single_channel_im)
 
     # Display instruction message box
     messagebox.showinfo("Instructions", "Follow segmentation steps in order starting with 1. Edges")
@@ -75,6 +80,9 @@ def drg_segment(self):
                                   command=lambda: draw_diameters(self))
     self.regions_button = tk.Button(self.drg_segment_window, text="4. Grow cell regions",
                                     command=lambda: grow_regions(self))
+    # Create the "Save" button
+    self.save_data_button = tk.Button(self.drg_segment_window, text="Save",
+                                      command=lambda: save_current_image_data(self))
 
     self.edges_button.pack()
     self.seeds_button.pack()
@@ -82,6 +90,32 @@ def drg_segment(self):
     self.regions_button.pack()
 
     apply_contrast(self)
+
+    # Define the Treeview (table) and its columns
+    self.info_table = tk.ttk.Treeview(self.drg_segment_window)
+    self.info_table["columns"] = ("Label", "Seed#", "Seed pos", "ROI area", "CTCF")
+    self.info_table.column("#0", width=0, stretch=tk.NO)  # Phantom column
+    self.info_table.column("Label", anchor=tk.W, width=120)
+    self.info_table.column("Seed#", anchor=tk.W, width=50)
+    self.info_table.column("Seed pos", anchor=tk.W, width=100)
+    self.info_table.column("ROI area", anchor=tk.W, width=80)
+    self.info_table.column("CTCF", anchor=tk.W, width=80)
+
+    # Define the headings
+    self.info_table.heading("#0", text="", anchor=tk.W)
+    self.info_table.heading("Label", text="Label", anchor=tk.W)
+    self.info_table.heading("Seed#", text="Seed#", anchor=tk.W)
+    self.info_table.heading("Seed pos", text="Seed pos", anchor=tk.W)
+    self.info_table.heading("ROI area", text="ROI area", anchor=tk.W)
+    self.info_table.heading("CTCF", text="CTCF", anchor=tk.W)
+
+    # Position the table next to the image canvas
+    self.info_table.place(anchor='ne', x=self.root.winfo_screenwidth(), y=0)
+    self.drg_segment_window.update_idletasks()
+    self.save_data_button.place(anchor='nw', x=self.info_table.winfo_x(),
+                                y=self.info_table.winfo_height() + 10)
+
+    self.save_data_button["state"] = "disabled"
     # Run the Tkinter event loop
     self.drg_segment_window.mainloop()
 
@@ -100,10 +134,21 @@ def grow_regions(self):
     edge_map = self.edge_maps[self.current_image_index]
     composite_roi_map = np.zeros(edge_map.shape, dtype=np.uint8)
     base_image = self.gray_images[self.current_image_index]
-    contrasted_image = self.contrasted_gray_images[self.current_image_index]
+    roi_overlay = cv2.merge([np.zeros_like(base_image), np.zeros_like(base_image), np.zeros_like(base_image),
+                             np.zeros_like(base_image)])
+
+    # Get all items on the canvas
+    all_items = self.drg_segment_canvas.find_all()
+
+    # Iterate through all items, deleting them except the image
+    for item in all_items:
+        if item != self.drg_segment_canvas_image_item:
+            self.drg_segment_canvas.itemconfig(item, state='hidden')
+
     for seed, _ in self.seeds[self.current_image_index][:]:
         adjusted_projections = radial_projection_with_adjustment(self, edge_map, seed)
-        roi_map = generate_roi_from_projections(self, edge_map, seed, adjusted_projections)
+        roi_map = generate_roi_from_projections(edge_map, seed, adjusted_projections)
+
         self.regions[self.current_image_index].append(roi_map)
         composite_roi_map = np.logical_or(composite_roi_map, roi_map).astype(np.uint8)
 
@@ -112,8 +157,6 @@ def grow_regions(self):
         isodata_region = np.where(masked_region >= isodata_threshold, base_image, 0)
         self.positive_areas[self.current_image_index].append(np.count_nonzero(isodata_region))
         self.positive_intensities[self.current_image_index].append(np.mean(isodata_region[isodata_region > 0]))
-
-    base_image_roi = np.where(composite_roi_map == 1, 255, contrasted_image)
 
     inverse_masked_region = np.where(composite_roi_map == 0, base_image, 0)
 
@@ -127,13 +170,26 @@ def grow_regions(self):
         self.ctcf[self.current_image_index].append(
             intensity_diff * self.positive_areas[self.current_image_index][i])
 
-    for x in self.ctcf[self.current_image_index]:
-        print(x)
-    edge_photo = df.convert_to_photoimage(base_image_roi)
+    # Existing grow_regions code to calculate ROI areas and CTCF...
+    for i, roi_area in enumerate(self.positive_areas[self.current_image_index]):
+        ctcf_value = self.ctcf[self.current_image_index][i]
+        # Update the corresponding table row with the calculated ROI area and CTCF value
+        if i < len(self.table_item_ids):
+            self.info_table.item(self.table_item_ids[i], values=(
+                self.image_labels[self.current_image_index],  # Label
+                f"{i + 1}",  # Seed#
+                f"{self.seeds[self.current_image_index][i][0]}",  # Seed pos (assuming [i][0] is the seed position)
+                f"{roi_area}",  # ROI area
+                f"{ctcf_value}"  # CTCF
+            ))
+    self.save_data_button["state"] = "normal"
 
-    self.drg_segment_photo = edge_photo
+    roi_overlay[composite_roi_map == 1] = [255, 0, 0, 128]
 
-    self.drg_segment_canvas.create_image(0, 0, anchor="nw", image=edge_photo)
+    photo = df.convert_to_photoimage(roi_overlay)
+    self.roi_photo = photo
+    self.drg_segment_canvas_roi = self.drg_segment_canvas.create_image(0, 0, anchor='nw', image=photo)
+    self.drg_segment_canvas.tag_raise(self.drg_segment_canvas_roi, self.drg_segment_canvas_image_item)
 
 
 # Image Processing Utilities
@@ -144,9 +200,15 @@ def apply_contrast(self):
     """
     clahe = cv2.createCLAHE(clipLimit=4, tileGridSize=(8, 8))
     gray = self.gray_images[self.current_image_index]
+    # First, apply non-local means denoising
+    # Since your images are not too large, starting parameters are chosen to be moderate.
+    # These parameters can be adjusted based on the noise levels observed in your images.
+    gray = cv2.fastNlMeansDenoising(gray, None, h=3, templateWindowSize=7, searchWindowSize=21)
+
     enhanced = clahe.apply(gray)
     self.contrasted_gray_images[self.current_image_index] = enhanced
-    contrasted_photo = df.convert_to_photoimage(enhanced)
+    single_channel_im = cv2.merge([np.zeros_like(enhanced), enhanced, np.zeros_like(enhanced)])
+    contrasted_photo = df.convert_to_photoimage(single_channel_im)
     self.drg_segment_photo = contrasted_photo
     self.drg_segment_canvas.itemconfig(self.drg_segment_canvas_image_item, image=contrasted_photo)
 
@@ -158,7 +220,7 @@ def radial_projection_with_adjustment(self, edge_map, seed, angle_step=1):
     projections = []
     angles = np.arange(0, 360, angle_step)
 
-    max_length = int(np.max(self.DRG_diameter[self.current_image_index]) / 2)
+    max_length = int(np.max(self.DRG_diameter[self.current_image_index]) * 1.2 / 2)
     # Calculate projections
     for angle in angles:
         for length in range(1, max_length + 1):
@@ -172,12 +234,16 @@ def radial_projection_with_adjustment(self, edge_map, seed, angle_step=1):
 
     for i in range(0, len(projections)):
         if projections[i] == max_length:
-            projections[i] = projections[i - 1]
+            projections[i] = np.median(projections)
 
-    return targeted_smoothing(projections)
+    for i in range(0, len(projections)):
+        if projections[i] == max_length:
+            projections[i] = np.median(projections)
+
+    return projections
 
 
-def generate_roi_from_projections(self, edge_map, seed, adjusted_projections, angle_step=1):
+def generate_roi_from_projections(edge_map, seed, adjusted_projections, angle_step=1):
     """
     Generate a Region Of Interest (ROI) from the adjusted projections.
     """
@@ -196,32 +262,6 @@ def generate_roi_from_projections(self, edge_map, seed, adjusted_projections, an
     roi_map = np.zeros(edge_map.shape, dtype=np.uint8)
     roi_map[rr, cc] = 1  # Fill the polygon to generate ROI
     return roi_map
-
-
-def targeted_smoothing(projections, window_size=3, variance_threshold=10):
-    """
-    Apply targeted smoothing to projection lengths based on local variance.
-    """
-    length = len(projections)
-    smoothed_projections = np.copy(projections)
-    half_window = window_size // 2
-
-    for i in range(length):
-        start_index = max(0, i - half_window)
-        end_index = min(length, i + half_window + 1)
-        window = projections[start_index:end_index]
-
-        # Calculate local variance in the window
-        local_variance = np.var(window)
-
-        # Check if the local variance exceeds the threshold
-        if local_variance > variance_threshold:
-            # Apply smoothing for high variance regions
-            local_mean = np.mean(window)
-            smoothed_projections[i] = local_mean
-        # Else, leave the projection as is for low variance regions
-
-    return smoothed_projections
 
 
 # User Interface Interaction Functions
@@ -276,6 +316,76 @@ def load_and_resize_images(self):
         self.ctcf.append([])
 
 
+def save_session_data_to_excel(self):
+    # Initialize an empty list to hold the flat list of seed data
+    seeds_data_flat_list = []
+
+    # Iterate through the session data to extract only the seeds data
+    for session_item in self.session_data:
+        # Assuming 'seeds_data' key contains the seeds information for this session item
+        seeds_data_list = session_item['seeds_data']
+
+        # Further assuming seeds_data_list is a list of dictionaries
+        for seed_data in seeds_data_list:
+            # Optionally, you can modify or add additional keys here as needed
+            seeds_data_flat_list.append(seed_data)
+
+    # Get the current timestamp
+    now = datetime.now()
+    timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")  # Format as you like
+
+    # Use the timestamp in the file name
+    file_path = f'seeds_data_{timestamp}.xlsx'
+
+    # Convert the flat list of seeds data into a pandas DataFrame
+    df = pd.DataFrame(seeds_data_flat_list)
+
+    # Save the DataFrame to an Excel file with the timestamped file name
+    with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Seeds Data')
+
+    messagebox.showinfo("Success", f"Seeds data saved successfully to {file_path}")
+
+
+def save_current_image_data(self):
+    """
+    Saves the data from the table for the current image into the aggregated session data.
+    """
+    current_image_data = {
+        "image_label": self.image_labels[self.current_image_index],
+        "seeds_data": []
+    }
+
+    if not self.table_item_ids:
+        messagebox.showerror("Error", "Table is empty", parent=self.drg_segment_window)
+    else:
+        # Retrieve data from the table
+        for item_id in self.table_item_ids:
+            item = self.info_table.item(item_id)
+            values = item["values"]
+            seed_data = {
+                "label": values[0],
+                "seed_number": values[1],
+                "seed_position": values[2],
+                "roi_area": values[3],
+                "ctcf": values[4]
+            }
+            current_image_data["seeds_data"].append(seed_data)
+
+        # Check if we are updating an existing entry or adding a new one
+        if len(self.session_data) > self.current_image_index:
+            self.session_data[self.current_image_index] = current_image_data
+        else:
+            self.session_data.append(current_image_data)
+
+        # Close the DRG segmentation window
+        self.drg_segment_window.destroy()
+
+        self.table_item_ids.clear()
+        # Optional: Show a confirmation message
+        messagebox.showinfo("Data Saved", "The segmentation data has been saved successfully.")
+
+
 # Image Transformation Functions
 
 def resize_image(self, image):
@@ -311,9 +421,18 @@ def draw_diameters(self):
     self.seeds_button["state"] = "disabled"
     self.edges_button["state"] = "disabled"
     self.regions_button["state"] = "disabled"
-    messagebox.showinfo("Instructions",
-                        "Left click to add seeds (center of each cell to count). \nRight click to remove",
+    messagebox.showinfo("Instructions", "Left-click to start and end a line. Right-click to remove a line.",
                         parent=self.drg_segment_window)
+    if hasattr(self, 'drg_segment_canvas_roi'):
+        self.drg_segment_canvas.delete(self.drg_segment_canvas_roi)
+
+    # Get all items on the canvas
+    all_items = self.drg_segment_canvas.find_all()
+
+    # Iterate through all items, deleting them except the image
+    for item in all_items:
+        if item != self.drg_segment_canvas_image_item:
+            self.drg_segment_canvas.itemconfig(item, state='normal')
 
     def save_diameters():
         if not self.DRG_line_ids:
@@ -350,13 +469,13 @@ def draw_diameters(self):
         if self.draw_start:
             self.temp_line = self.drg_segment_canvas.create_line(self.draw_start[0], self.draw_start[1], event.x,
                                                                  event.y,
-                                                                 fill="white", width=3, tags="temp_line")
+                                                                 fill="#ff0000", width=3, tags="temp_line")
 
     def end_line(event):
         """Function to finalize drawing a line."""
         if self.draw_start:
             line_id = self.drg_segment_canvas.create_line(self.draw_start[0], self.draw_start[1], event.x, event.y,
-                                                          fill="white", width=3)
+                                                          fill="#ff0000", width=3)
             self.DRG_line_ids.append((self.draw_start, (event.x, event.y), line_id))
             if hasattr(self, 'temp_line'):
                 self.drg_segment_canvas.delete(self.temp_line)
@@ -393,12 +512,47 @@ def set_seeds(self):
                         "Left click to add seeds (center of each cell to count). \nRight click to remove",
                         parent=self.drg_segment_window)
 
+    if self.table_item_ids:
+        for id in self.table_item_ids:
+            self.info_table.delete(id)
+
+    if self.seeds[self.current_image_index]:
+        # Existing code to check seeds and clear the table
+        self.table_item_ids.clear()  # Clear existing references
+        for i, (coords, seed_id) in enumerate(self.seeds[self.current_image_index]):
+            row_id = self.info_table.insert("", tk.END, values=(
+                self.image_labels[self.current_image_index], f"{i + 1}", f"{coords}", "n/a",
+                "n/a"))
+            self.table_item_ids.append(row_id)
+
+    if hasattr(self, 'drg_segment_canvas_roi'):
+        self.drg_segment_canvas.delete(self.drg_segment_canvas_roi)
+
+    # Get all items on the canvas
+    all_items = self.drg_segment_canvas.find_all()
+
+    # Iterate through all items, deleting them except the image
+    for item in all_items:
+        if item != self.drg_segment_canvas_image_item:
+            self.drg_segment_canvas.itemconfig(item, state='normal')
+
     def save_seeds():
         if not self.seeds[self.current_image_index]:
             # Display instruction message box
             messagebox.showerror("Error", "Segmentation requires at least 1 seed", parent=self.drg_segment_window)
 
         else:
+            if self.table_item_ids:
+                for id in self.table_item_ids:
+                    self.info_table.delete(id)
+            # Existing code to check seeds and clear the table
+            self.table_item_ids.clear()  # Clear existing references
+            for i, (coords, seed_id) in enumerate(self.seeds[self.current_image_index]):
+                row_id = self.info_table.insert("", tk.END, values=(
+                    self.image_labels[self.current_image_index], f"{i + 1}", f"{coords}", "n/a",
+                    "n/a"))
+                self.table_item_ids.append(row_id)
+
             self.lines_button["state"] = "normal"
             self.edges_button["state"] = "normal"
             self.regions_button["state"] = "normal"
@@ -409,17 +563,20 @@ def set_seeds(self):
             self.drg_segment_canvas.unbind("<Button-3>")
 
     def add_seed(event):
-        seed_id = self.drg_segment_canvas.create_oval(event.x - 3, event.y - 3, event.x + 3, event.y + 3, fill='white',
-                                                      width=2)
-        self.seeds[self.current_image_index].append((np.array((event.x, event.y)), seed_id))
+        seed_id = self.drg_segment_canvas.create_oval(event.x - 5, event.y - 5, event.x + 5, event.y + 5,
+                                                      fill='#ff0000', outline='#ff0000', width=2)
+        # Convert coords to tuple before adding
+        self.seeds[self.current_image_index].append((tuple(np.array((event.x, event.y))), seed_id))
 
     def delete_seed(event):
-        proximity_threshold = 30 * self.root.winfo_screenwidth() / 2560  # Lower proximity threshold
-        for coords, seed_id in self.seeds[self.current_image_index][:]:
-            dist = np.linalg.norm(coords - (event.x, event.y))
-            if dist <= proximity_threshold:
+        proximity_threshold = 20 * self.root.winfo_screenwidth() / 2560  # Adjust threshold as necessary
+        event_coords = np.array((event.x, event.y))
+        for i, (coords, seed_id) in enumerate(list(self.seeds[self.current_image_index])):
+            if np.linalg.norm(coords - event_coords) <= proximity_threshold:
                 self.drg_segment_canvas.delete(seed_id)
-                self.seeds[self.current_image_index].remove((coords, seed_id))
+                # Remove by index to avoid ambiguity
+                del self.seeds[self.current_image_index][i]
+                break
 
     save_button = tk.Button(self.drg_segment_window, text="Save", command=lambda: save_seeds())
     save_button.place(anchor="nw", x=self.seeds_button.winfo_x() + self.seeds_button.winfo_width() + 10,
@@ -438,9 +595,10 @@ def edge_detect(self):
     edges_window.title("Edge Detection Settings")
 
     initial_image = self.contrasted_gray_images[self.current_image_index]
-    photo = df.convert_to_photoimage(initial_image)
-    self.drg_segment_image = initial_image
-    self.drg_segment_photo = photo
+    single_channel_im = cv2.merge([np.zeros_like(initial_image), initial_image, np.zeros_like(initial_image)])
+    photo = df.convert_to_photoimage(single_channel_im)
+    self.drg_segment_image = single_channel_im
+    self.drg_segment_photo = single_channel_im
     self.drg_segment_canvas.itemconfig(self.drg_segment_canvas_image_item, image=photo)
 
     def apply_edges(threshold1, threshold2, min_length, image, event=None):
@@ -459,7 +617,9 @@ def edge_detect(self):
                     cv2.drawContours(filtered_map, [contour], -1, 255, thickness=cv2.FILLED)
 
             # Update the display with filtered edge map
-            edge_overlay = np.where(filtered_map == 255, 255, image)
+            edge_overlay = single_channel_im.copy()
+            edge_overlay[filtered_map == 255] = [255, 255, 255]
+
             edge_photo = df.convert_to_photoimage(edge_overlay)
             self.edge_maps[self.current_image_index] = filtered_map
             self.drg_segment_photo = edge_photo
@@ -487,7 +647,9 @@ def edge_detect(self):
                                  thickness=-1)
 
             # Refresh the display after contour deletion
-            edge_overlay = np.where(self.edge_maps[self.current_image_index] == 255, 255, image)
+            # Update the display with filtered edge map
+            edge_overlay = single_channel_im.copy()
+            edge_overlay[self.edge_maps[self.current_image_index] == 255] = [255, 255, 255]
             edge_photo = df.convert_to_photoimage(edge_overlay)
             self.drg_segment_photo = edge_photo
             self.drg_segment_canvas.itemconfig(self.drg_segment_canvas_image_item, image=edge_photo)

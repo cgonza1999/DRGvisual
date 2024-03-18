@@ -80,6 +80,8 @@ def display_current_image(self):
 
     # Display the image on the canvas
     self.canvas.create_image(0, 0, anchor="nw", image=photo_image, tags="image")
+
+
 def update_image_label_display(self):
     """
     Update the display of the current image's label.

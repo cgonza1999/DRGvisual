@@ -43,6 +43,9 @@ class ImageLabelerApp:
         self.gray_images = []
         self.contrasted_gray_images = []
         self.edge_maps = []
+        self.session_data = []  # To hold data for all images
+        # Assuming self.table_item_ids stores references to each row inserted into the table
+        self.table_item_ids = []
 
         # Variables for image processing states and parameters
         self.edge_thresholds = []
@@ -53,6 +56,8 @@ class ImageLabelerApp:
         self.positive_intensities = []
         self.background_intensities = []
         self.ctcf = []
+        self.diameter_items = []  # Store diameter canvas item references
+        self.region_items = []  # Store region canvas item references
 
         # Image file management
         self.image_file_paths = []
@@ -71,7 +76,8 @@ class ImageLabelerApp:
         self.select_button = tk.Button(self.root, text="Select Image Files",
                                        command=lambda: cvf.select_and_load_files(self))
         self.rgb_split_button = tk.Button(self.root, text="RGB Preview", command=lambda: df.rgb_split(self))
-
+        self.label_reset_button = tk.Button(self.root, text="Labels", command=lambda: df.prompt_for_labels(self))
+        self.save_all_button = tk.Button(self.root, text="Save all", command=lambda: cvf.save_session_data_to_excel(self))
         # Dropdown for color channel selection
         self.setup_color_channel_dropdown()
 
@@ -122,7 +128,7 @@ class ImageLabelerApp:
         button_width = int(0.07 * screen_width)
         button_height = int(0.025 * screen_height)  # Static height for simplicity
         wgap = int(0.008 * screen_width)  # Gap between buttons and other elements
-        hgap = int(0.014 * screen_height)  # Gap between buttons and other elements
+        hgap = int(0.01 * screen_height)  # Gap between buttons and other elements
 
         # Calculate positions based on the defined dimensions and positions
         prev_button_x = self.rect_start_x
@@ -133,6 +139,7 @@ class ImageLabelerApp:
         # Place navigation buttons
         self.prev_button.place(x=prev_button_x, y=buttons_y, width=button_width, height=button_height)
         self.next_button.place(x=next_button_x, y=buttons_y, width=button_width, height=button_height)
+        self.label_reset_button.place(x=prev_button_x, y=buttons_y+button_height+hgap, width=button_width, height=button_height)
 
         # Select image files button
         self.select_button.place(x=select_button_x, y=self.rect_start_y, height=button_height, width=button_width)
@@ -151,8 +158,10 @@ class ImageLabelerApp:
                                           height=button_height, width=button_width)
         # DRG Segmentation button below RGB split button
         self.drg_segment_button.place(x=channel_label_x,
-                                      y=channel_label_y + 2*(button_height + hgap), height=button_height, width=button_width)
-
+                                      y=channel_label_y + 2*(button_height + hgap), height=button_height,
+                                      width=button_width)
+        self.save_all_button.place(x=channel_label_x, y=channel_label_y + 3*(button_height + hgap), height=button_height,
+                                   width=button_width)
         # Image label display setup
         label_font = tkfont.Font(family="Segoe UI", size=12, weight="bold")
         self.image_label_display = tk.Label(self.root, font=label_font, bg='white')
