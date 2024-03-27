@@ -73,15 +73,16 @@ def drg_segment(self):
     self.drg_segment_canvas_image_item = self.drg_segment_canvas.create_image(0, 0, anchor="nw", image=photo)
     self.drg_segment_canvas.pack()
 
+    self.button_font = tk.font.Font(family="Segoe UI", size=7, weight="normal", slant="roman")
     # Create finish button
-    self.edges_button = tk.Button(self.drg_segment_window, text="1. Edges", command=lambda: edge_detect(self))
-    self.seeds_button = tk.Button(self.drg_segment_window, text="2. Set Seeds", command=lambda: set_seeds(self))
-    self.lines_button = tk.Button(self.drg_segment_window, text="3. Draw cell diameters",
+    self.edges_button = tk.Button(self.drg_segment_window, text="1. Edges", font=self.button_font, command=lambda: edge_detect(self))
+    self.seeds_button = tk.Button(self.drg_segment_window, text="2. Set Seeds", font=self.button_font, command=lambda: set_seeds(self))
+    self.lines_button = tk.Button(self.drg_segment_window, text="3. Draw cell diameters", font=self.button_font,
                                   command=lambda: draw_diameters(self))
-    self.regions_button = tk.Button(self.drg_segment_window, text="4. Grow cell regions",
+    self.regions_button = tk.Button(self.drg_segment_window, text="4. Grow cell regions", font=self.button_font,
                                     command=lambda: grow_regions(self))
     # Create the "Save" button
-    self.save_data_button = tk.Button(self.drg_segment_window, text="Save",
+    self.save_data_button = tk.Button(self.drg_segment_window, text="Save", font=self.button_font,
                                       command=lambda: save_current_image_data(self))
 
     self.edges_button.pack()
@@ -490,7 +491,7 @@ def draw_diameters(self):
                 self.DRG_line_ids.remove((start, end, line_id))
                 break
 
-    save_button = tk.Button(self.drg_segment_window, text="Save", command=lambda: save_diameters())
+    save_button = tk.Button(self.drg_segment_window, text="Save", font=self.button_font, command=lambda: save_diameters())
     save_button.place(anchor="nw", x=self.lines_button.winfo_x() + self.lines_button.winfo_width() + 10,
                       y=self.lines_button.winfo_y())
 
@@ -578,7 +579,7 @@ def set_seeds(self):
                 del self.seeds[self.current_image_index][i]
                 break
 
-    save_button = tk.Button(self.drg_segment_window, text="Save", command=lambda: save_seeds())
+    save_button = tk.Button(self.drg_segment_window, text="Save", font=self.button_font, command=lambda: save_seeds())
     save_button.place(anchor="nw", x=self.seeds_button.winfo_x() + self.seeds_button.winfo_width() + 10,
                       y=self.seeds_button.winfo_y())
 
@@ -684,7 +685,7 @@ def edge_detect(self):
                           command=lambda value: apply_edges(t1_slider_value.get(), t2_slider_value.get(), value,
                                                             initial_image))
 
-    save_button = tk.Button(edges_window, text="Save", command=lambda: save_edges())
+    save_button = tk.Button(edges_window, text="Save", font=self.button_font, command=lambda: save_edges())
 
     t2_slider.pack()
     t1_slider.pack()
