@@ -95,11 +95,11 @@ def drg_segment(self):
     self.info_table = tk.ttk.Treeview(self.drg_segment_window)
     self.info_table["columns"] = ("Label", "Seed#", "Seed pos", "ROI area", "CTCF")
     self.info_table.column("#0", width=0, stretch=tk.NO)  # Phantom column
-    self.info_table.column("Label", anchor=tk.W, width=120)
-    self.info_table.column("Seed#", anchor=tk.W, width=50)
-    self.info_table.column("Seed pos", anchor=tk.W, width=100)
-    self.info_table.column("ROI area", anchor=tk.W, width=80)
-    self.info_table.column("CTCF", anchor=tk.W, width=80)
+    self.info_table.column("Label", anchor=tk.W, width=60)
+    self.info_table.column("Seed#", anchor=tk.W, width=25)
+    self.info_table.column("Seed pos", anchor=tk.W, width=50)
+    self.info_table.column("ROI area", anchor=tk.W, width=40)
+    self.info_table.column("CTCF", anchor=tk.W, width=40)
 
     # Define the headings
     self.info_table.heading("#0", text="", anchor=tk.W)
