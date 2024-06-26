@@ -1,0 +1,14 @@
+{
+	"file": "https://wustl.box.com/s/243o5cme6gpwzcorhdcev3mrovawcx45",
+	"name": "STZHFD-db/db Cytokine Networks",
+	"header": 0,
+	"separator": ",",
+	"skip": 0,
+	"meta": [
+		{ "type": "id", "index": 0, "name": "Cytokine" }
+
+	],
+	"sets": [
+		{ "format": "binary", "start": 1, "end": 7 }
+	]
+}
